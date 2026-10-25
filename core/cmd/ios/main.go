@@ -270,12 +270,12 @@ func getTotalTraffic(onlyStatisticsProxy C.int) *C.char {
 // ---------------------------------------------------------------------------
 
 var (
-	governorOnce      sync.Once
-	memoryCeiling     atomic.Uint64
-	governorStopped   atomic.Bool
-	lowmemBuild       bool
-	defaultCeiling    uint64
-	defaultGCPercent  int32 = 50
+	governorOnce     sync.Once
+	memoryCeiling    atomic.Uint64
+	governorStopped  atomic.Bool
+	lowmemBuild      bool
+	defaultCeiling   uint64
+	defaultGCPercent int32 = 50
 )
 
 //export setMemoryLimit

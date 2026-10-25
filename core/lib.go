@@ -17,7 +17,6 @@ import (
 	"github.com/metacubex/mihomo/component/dialer"
 	"github.com/metacubex/mihomo/component/process"
 	"github.com/metacubex/mihomo/constant"
-	"github.com/metacubex/mihomo/dns"
 	"github.com/metacubex/mihomo/listener/sing_tun"
 	"github.com/metacubex/mihomo/log"
 )
@@ -232,8 +231,7 @@ func handleUpdateDns(value string) {
 			return
 		}
 		log.Infoln("[DNS] updateDns %s", value)
-		dns.UpdateSystemDNS(addr)
-		dns.FlushCacheWithDefaultResolver()
+		applySystemDns(addr)
 	})
 }
 
