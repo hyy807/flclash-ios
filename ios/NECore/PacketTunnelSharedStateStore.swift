@@ -1,5 +1,4 @@
 import Foundation
-import Shared
 
 enum PacketTunnelEnvironment {
   static let extensionBundleIdentifier = Bundle.main.bundleIdentifier!
@@ -8,7 +7,10 @@ enum PacketTunnelEnvironment {
   )
   /// The group the signer granted, resolved from the embedded profile; the
   /// derived name is only the fallback.
-  static let appGroupIdentifier = NEHelper.appGroupIdentifier
+  static let appGroupIdentifier = AppGroupProfileResolver.resolve(
+    bundleURL: Bundle.main.bundleURL,
+    fallbackBundleIdentifier: baseBundleIdentifier
+  )
   static let widgetIdentifier = "\(baseBundleIdentifier).Widget"
   static let eventNotificationName =
     "\(extensionBundleIdentifier).event"
@@ -182,5 +184,55 @@ struct PacketTunnelVPNOptions: Decodable {
       Bool.self,
       forKey: .excludeDeviceCommunication
     ) ?? true
+  }
+}
+
+/// Reads the App Group out of the provisioning profile the signer embedded.
+///
+/// An unsigned IPA is re-signed by whatever tool the user has (ESign,
+/// Sideloadly, AltStore, TrollStore), and those tools may rename the bundle and
+/// grant their own group. A hard-coded `group.<bundle id>` then points at a
+/// container that does not exist: state is written where the other process
+/// cannot read it and the tunnel fails with missingVPNOptions.
+///
+/// iOS does not expose a process's own entitlements to Swift (SecTask is not
+/// public there), so the profile is parsed instead. TrollStore installs carry
+/// no profile; there the derived name is right, because the bundle id is kept.
+enum AppGroupProfileResolver {
+  static func resolve(bundleURL: URL, fallbackBundleIdentifier: String) -> String {
+    let bundles = [bundleURL, containingApp(of: bundleURL)].compactMap { $0 }
+    for bundle in bundles {
+      if let group = group(in: bundle) {
+        return group
+      }
+    }
+    return "group.\(fallbackBundleIdentifier)"
+  }
+
+  private static func containingApp(of bundleURL: URL) -> URL? {
+    guard bundleURL.pathExtension == "appex" else {
+      return nil
+    }
+    return bundleURL.deletingLastPathComponent().deletingLastPathComponent()
+  }
+
+  private static func group(in bundleURL: URL) -> String? {
+    let profileURL = bundleURL.appendingPathComponent("embedded.mobileprovision")
+    guard let data = try? Data(contentsOf: profileURL),
+      let start = data.range(of: Data("<?xml".utf8)),
+      let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
+      let plist = try? PropertyListSerialization.propertyList(
+        from: data.subdata(in: start.lowerBound..<end.upperBound),
+        options: [],
+        format: nil
+      ) as? [String: Any],
+      let entitlements = plist["Entitlements"] as? [String: Any],
+      let groups = entitlements["com.apple.security.application-groups"] as? [String],
+      let group = groups.first,
+      !group.isEmpty
+    else {
+      return nil
+    }
+    return group
   }
 }

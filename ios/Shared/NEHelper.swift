@@ -10,68 +10,9 @@ public enum NEHelper {
     return bundleId
   }
 
-  /// Whatever App Group the signer granted.
-  ///
-  /// An unsigned IPA is re-signed by whatever tool the user has (ESign,
-  /// Sideloadly, AltStore, TrollStore); those tools may rename the bundle and
-  /// grant their own group. A hard-coded `group.<bundle id>` then points at a
-  /// container that does not exist, the app writes its state where the
-  /// extension cannot read it, and startTunnel fails with missingVPNOptions.
-  ///
-  /// iOS does not expose a process's own entitlements to Swift (SecTask is not
-  /// public there), so read them from the provisioning profile the signer
-  /// embedded. TrollStore installs carry no profile, and there the derived
-  /// name is correct because the bundle id is untouched.
-  public static var appGroupIdentifier: String {
-    if let group = groupFromProfile(appBundleURL()) {
-      return group
-    }
-    if let group = groupFromProfile(Bundle.main.bundleURL) {
-      return group
-    }
-    return "group.\(appBundleId)"
-  }
-
-  /// The containing `.app` for an extension process, the bundle itself for the app.
-  static func appBundleURL() -> URL {
-    let bundleURL = Bundle.main.bundleURL
-    if bundleURL.pathExtension == "appex" {
-      return bundleURL.deletingLastPathComponent().deletingLastPathComponent()
-    }
-    return bundleURL
-  }
-
-  private static func groupFromProfile(_ bundleURL: URL) -> String? {
-    let profileURL = bundleURL.appendingPathComponent("embedded.mobileprovision")
-    guard let data = try? Data(contentsOf: profileURL),
-      let plistData = plistPayload(in: data),
-      let plist = try? PropertyListSerialization.propertyList(
-        from: plistData,
-        options: [],
-        format: nil
-      ) as? [String: Any],
-      let entitlements = plist["Entitlements"] as? [String: Any],
-      let groups = entitlements["com.apple.security.application-groups"] as? [String],
-      let group = groups.first,
-      !group.isEmpty
-    else {
-      return nil
-    }
-    return group
-  }
-
-  private static func plistPayload(in data: Data) -> Data? {
-    guard let start = data.range(of: Data("<?xml".utf8)),
-      let end = data.range(
-        of: Data("</plist>".utf8),
-        in: start.lowerBound..<data.endIndex
-      )
-    else {
-      return nil
-    }
-    return data.subdata(in: start.lowerBound..<end.upperBound)
-  }
-
+  /// Fallback only: the app and the extension each resolve the signed group
+  /// from their own profile (see AppGroupProfileResolver).
+  public static var appGroupIdentifier: String { "group.\(appBundleId)" }
   public static var widgetIdentifier: String { "\(appBundleId).Widget" }
   public static var providerBundleIdentifier: String {
     "\(appBundleId).NECore"
