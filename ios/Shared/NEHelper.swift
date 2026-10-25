@@ -1,6 +1,5 @@
 import Foundation
 import NetworkExtension
-import Security
 
 public enum NEHelper {
   private static var appBundleId: String {
@@ -11,21 +10,12 @@ public enum NEHelper {
     return bundleId
   }
 
-  /// Whatever group the binary was signed with; see AppGroupResolver in
-  /// SharedStateStore.swift for why a derived name is not enough.
+  /// Whatever group the signer granted; AppGroupResolver reads it from the
+  /// embedded profile so a re-signed IPA stays portable.
   public static var appGroupIdentifier: String {
-    if let task = SecTaskCreateFromSelf(kCFAllocatorDefault),
-      let groups = SecTaskCopyValueForEntitlement(
-        task,
-        "com.apple.security.application-groups" as CFString,
-        nil
-      ) as? [String],
-      let group = groups.first
-    {
-      return group
-    }
-    return "group.\(appBundleId)"
+    AppGroupResolver.resolved(fallbackBundleIdentifier: appBundleId)
   }
+
   public static var widgetIdentifier: String { "\(appBundleId).Widget" }
   public static var providerBundleIdentifier: String {
     "\(appBundleId).NECore"
