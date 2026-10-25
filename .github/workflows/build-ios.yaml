@@ -108,9 +108,13 @@ jobs:
           bash tool/ios/build_core.sh
           ls -lh libclash/ios/arm64/
 
-      - name: Flutter build (no codesign)
+      # Generate Generated.xcconfig / flutter_export_environment.sh only. The
+      # real build is the archive step below, which runs Flutter's own build
+      # phases and prints the diagnostics `flutter build ios` swallows.
+      - name: Prepare Flutter iOS configuration
         run: |
-          flutter build ios --release --no-codesign --build-name 0.9.2 --build-number "${GITHUB_RUN_NUMBER}"
+          flutter build ios --release --no-codesign --config-only \
+            --build-name 0.9.2 --build-number "${GITHUB_RUN_NUMBER}"
 
       - name: Archive app
         env:
