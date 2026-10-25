@@ -55,4 +55,4 @@ class Tile {
   }
 }
 
-final tile = system.isAndroid ? Tile.instance : null;
+final tile = (system.isAndroid || system.isIOS) ? Tile.instance : null;

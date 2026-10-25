@@ -1,0 +1,45 @@
+FlClash for iOS
+===============
+
+This repository is a fork of FlClash (github.com/chen08209/FlClash, GPL-3.0),
+imported from github.com/hyy807/FlClash at version 0.9.2, with an iOS port
+added.
+
+GPL-3.0 obligations: the complete corresponding source of every binary this
+repository builds is this repository, including the mihomo core submodule
+(core/Clash.Meta) and the Rust helper (plugins/rust_api).
+
+iOS host layer
+--------------
+
+The Swift/Objective-C iOS host in ios/ and the C callback table
+(core/bride.h, core/cmd/ios/bride.c) are derived from the iOS work published in
+chenx-dust/FlClash-Patched (GPL-3.0), which is itself derived from FlClash:
+
+  * ios/NECore/PacketTunnelProvider.swift
+  * ios/NECore/PacketTunnelNetworkConfiguration.swift  (descriptor scan)
+  * ios/NECore/NECoreBridge.{h,m}, ios/Runner/IOSCoreBridge.{h,m}
+  * ios/NECore/NECoreEventQueue.swift
+  * ios/Runner/{Tunnel,Core,Storage,Shared}/**, Widget/**
+  * core/bride.h, core/bride.c
+
+Changes made here, relative to that source:
+
+  * the Go bridge is a separate `package main` (core/cmd/ios) that imports the
+    0.9.2 core package, instead of living inside the core package;
+  * the Dart-facing channel contract follows FlClash 0.9.2, which splits
+    `<bundle>/core` (method calls, bytes) from `<bundle>/service` (lifecycle)
+    and sends a command revision with start/stop;
+  * the memory governor (phys_footprint sampling, lowmem archive and
+    setMemoryLimit export) is new;
+  * the Xcode core build phase calls tool/ios/build_core.sh instead of the
+    upstream Dart build harness;
+  * bundle identifiers, App Group and display name are FlClash's.
+
+Prior art consulted for the architecture (not copied):
+
+  * SagerNet/sing-box — clients/apple-ios, the packet-tunnel + c-archive shape;
+  * Apple NetworkExtension documentation for NEPacketTunnelProvider,
+    NEPacketTunnelNetworkSettings and NEProvider lifecycle;
+  * MetaCubeX/mipstack — mihomo's userspace stack, the fallback when no fd is
+    available.

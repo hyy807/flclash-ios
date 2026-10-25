@@ -1,0 +1,183 @@
+name: build-ios-ipa
+
+# Unsigned arm64 IPA for self-signing (ESign / Sideloadly / AltStore /
+# TrollStore). Nothing here binds a certificate or a team: the entitlements
+# carry $(APP_BUNDLE_ID), so a signing tool can rename the bundle and inject its
+# own profile later.
+#
+# The Network Extension entitlement
+# (com.apple.developer.networking.networkextension = packet-tunnel-provider)
+# cannot be signed by a free Apple ID. An unsigned IPA installs fine that way
+# and then fails at startTunnel — that is the platform, not this build.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: 'Base bundle identifier (extension becomes <id>.NECore)'
+        type: string
+        default: 'com.follow.clash'
+      deployment_target:
+        description: 'iPhoneOS deployment target (falls back 16.0 / 17.0 / 18.0 on failure)'
+        type: string
+        default: '15.0'
+  push:
+    branches:
+      - main
+    paths:
+      - 'ios/**'
+      - 'core/cmd/ios/**'
+      - 'tool/ios/**'
+      - '.github/workflows/build-ios.yaml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.47.6'
+  GO_VERSION: '1.27.3'
+  BUNDLE_ID: ${{ github.event.inputs.bundle_id || 'com.follow.clash' }}
+  DEPLOY_TARGET: ${{ github.event.inputs.deployment_target || '15.0' }}
+
+jobs:
+  ipa:
+    name: Unsigned IPA (arm64)
+    runs-on: macos-26
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout (with mihomo submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: core/go.sum
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Setup Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app || sudo xcode-select -s /Applications/Xcode_26.2.app || true
+          xcodebuild -version
+
+      - name: Rust target for the editor helper
+        run: |
+          rustup target add aarch64-apple-ios
+          cargo --version
+
+      - name: Fetch CA certificates
+        run: |
+          bundle=core/Clash.Meta/component/ca/ca-certificates.crt
+          curl -fsSL --retry 3 -o "$bundle" https://curl.se/ca/cacert.pem
+          count=$(grep -c 'BEGIN CERTIFICATE' "$bundle")
+          echo "$count CA certificates"
+          test "$count" -ge 100
+
+      - name: Flutter dependencies
+        run: flutter pub get
+
+      # The setup hook only knows desktop and Android targets; the iOS core is
+      # built by the Xcode Run Script phase (tool/ios/build_core.sh) instead.
+      - name: Disable desktop core hook for the iOS build
+        run: |
+          python3 - <<'PY'
+          import pathlib, re
+          p = pathlib.Path('pubspec.yaml')
+          s = p.read_text()
+          s2 = s.replace("    setup:\n      build_assets: true", "    setup:\n      build_assets: false", 1)
+          assert s2 != s, "setup.build_assets not found"
+          p.write_text(s2)
+          PY
+          grep -A3 '^hooks:' pubspec.yaml
+
+      - name: Build core archives only (fail fast)
+        run: |
+          export PLATFORM_NAME=iphoneos
+          bash tool/ios/build_core.sh
+          ls -lh libclash/ios/arm64/
+
+      - name: Flutter build (no codesign)
+        run: |
+          flutter build ios --release --no-codesign --build-name 0.9.2 --build-number "${GITHUB_RUN_NUMBER}"
+
+      - name: Archive app
+        env:
+          DISABLE_SWIFTLINT: '1'
+        run: |
+          set -u
+          rm -rf ~/Library/Developer/Xcode/DerivedData/Runner-* 2>/dev/null || true
+          archive="$RUNNER_TEMP/FlClash.xcarchive"
+          for target in "$DEPLOY_TARGET" 16.0 17.0 18.0; do
+            echo "=== trying IPHONEOS_DEPLOYMENT_TARGET=$target ==="
+            rm -rf "$archive"
+            xcodebuild archive \
+              -workspace ios/Runner.xcworkspace \
+              -scheme Runner \
+              -configuration Release \
+              -destination 'generic/platform=iOS' \
+              -archivePath "$archive" \
+              -skipPackagePluginValidation \
+              -skipMacroValidation \
+              IPHONEOS_DEPLOYMENT_TARGET="$target" \
+              APP_BUNDLE_ID="$BUNDLE_ID" \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO > "$RUNNER_TEMP/xcodebuild-$target.log" 2>&1 || true
+            grep -E "error:|ARCHIVE SUCCEEDED|ARCHIVE FAILED" "$RUNNER_TEMP/xcodebuild-$target.log" | head -20 || true
+            if [ -d "$archive" ]; then
+              echo "ARCHIVED_WITH_TARGET=$target" | tee "$RUNNER_TEMP/used-target.txt"
+              break
+            fi
+          done
+          if [ ! -d "$archive" ]; then
+            echo "=== xcodebuild failed for every deployment target ==="
+            tail -120 "$RUNNER_TEMP/xcodebuild-$DEPLOY_TARGET.log" || true
+            exit 1
+          fi
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/FlClash.xcarchive/Products/Applications/Runner.app"
+          test -d "$app"
+          # A green archive with no extension can never start a VPN: assert it.
+          ls -d "$app/PlugIns/"*.appex
+          test -d "$app/PlugIns/NECore.appex"
+          plutil -p "$app/PlugIns/NECore.appex/Info.plist" | grep -q "com.apple.networkextension.packet-tunnel"
+
+          mkdir -p "$RUNNER_TEMP/ipa/Payload" output
+          ditto "$app" "$RUNNER_TEMP/ipa/Payload/FlClash.app"
+          # An unsigned payload must carry no signature or profile, or a
+          # signing tool will fight it.
+          find "$RUNNER_TEMP/ipa/Payload" -name _CodeSignature -type d -prune -exec rm -rf {} +
+          find "$RUNNER_TEMP/ipa/Payload" -name embedded.mobileprovision -delete || true
+          find "$RUNNER_TEMP/ipa/Payload" -name "*.xcent" -delete || true
+
+          name="FlClash-0.9.2-ios-arm64-unsigned.ipa"
+          ( cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/output/$name" Payload )
+          ls -lh "output/$name"
+          unzip -l "output/$name" | head -20
+
+          echo "### iOS IPA" >> "$GITHUB_STEP_SUMMARY"
+          echo "- file: \`$name\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- bundle: \`$BUNDLE_ID\` / extension \`$BUNDLE_ID.NECore\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- app group: \`group.$BUNDLE_ID\` (must exist in the signing profile)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- deployment target: $(cat "$RUNNER_TEMP/used-target.txt")" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlClash-ios-unsigned-ipa
+          path: output/*.ipa
+          if-no-files-found: error
