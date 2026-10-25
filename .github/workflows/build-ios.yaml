@@ -145,18 +145,17 @@ jobs:
             test -d "$archive/Products/Applications/Runner.app"
           }
 
-          if run_archive; then
-            echo "ARCHIVED with the project's deployment targets" | tee "$RUNNER_TEMP/used-target.txt"
+          # 18.0 is what actually builds: the widget target needs the iOS 18
+          # ControlWidget APIs, and Xcode resolves the extension's deployment
+          # target from the build invocation, not only from the pbxproj. This
+          # raises the app's minimum to 18.0; dropping the Widget target is what
+          # would bring it back down to 15/16/17.
+          if run_archive IPHONEOS_DEPLOYMENT_TARGET=18.0; then
+            echo "ARCHIVED with IPHONEOS_DEPLOYMENT_TARGET=18.0" | tee "$RUNNER_TEMP/used-target.txt"
           else
-            echo "=== first attempt failed ==="
             grep -E "error:" "$RUNNER_TEMP/archive.log" | head -20 || true
-            echo "=== retrying with IPHONEOS_DEPLOYMENT_TARGET=$DEPLOY_TARGET ==="
-            if ! run_archive IPHONEOS_DEPLOYMENT_TARGET="$DEPLOY_TARGET"; then
-              grep -E "error:" "$RUNNER_TEMP/archive.log" | head -20 || true
-              tail -80 "$RUNNER_TEMP/archive.log" || true
-              exit 1
-            fi
-            echo "ARCHIVED with IPHONEOS_DEPLOYMENT_TARGET=$DEPLOY_TARGET" | tee "$RUNNER_TEMP/used-target.txt"
+            tail -60 "$RUNNER_TEMP/archive.log" || true
+            exit 1
           fi
 
       - name: Package unsigned IPA
