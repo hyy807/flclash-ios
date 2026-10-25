@@ -9,9 +9,7 @@ final class SharedStateStore {
 
   private let eventQueueDirectoryName = "core-events"
 
-  let appGroupIdentifier = AppGroupResolver.resolved(
-    fallbackBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.follow.clash"
-  )
+  let appGroupIdentifier = NEHelper.appGroupIdentifier
   let eventNotificationName = "\(Bundle.main.bundleIdentifier!).NECore.event"
 
   func activeVpnOptions() -> String? {

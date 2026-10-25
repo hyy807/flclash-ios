@@ -8,9 +8,7 @@ enum PacketTunnelEnvironment {
   )
   /// The group the signer granted, resolved from the embedded profile; the
   /// derived name is only the fallback.
-  static let appGroupIdentifier = AppGroupResolver.resolved(
-    fallbackBundleIdentifier: baseBundleIdentifier
-  )
+  static let appGroupIdentifier = NEHelper.appGroupIdentifier
   static let widgetIdentifier = "\(baseBundleIdentifier).Widget"
   static let eventNotificationName =
     "\(extensionBundleIdentifier).event"
