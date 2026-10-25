@@ -60,6 +60,10 @@ build() {
     echo "build_core: expected header $OUT/$name.h" >&2
     exit 1
   fi
+  # The generated header carries the cgo preamble, which quotes bride.h; a
+  # quoted include resolves next to the including file, so the callback table
+  # has to sit beside both headers.
+  cp "$ROOT/core/bride.h" "$OUT/bride.h"
   ls -lh "$archive" "$OUT/$name.h"
 }
 
