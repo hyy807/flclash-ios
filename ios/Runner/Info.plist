@@ -50,6 +50,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>FlClash requests this permission to scan QR code.</string>
 	<key>NSLocalNetworkUsageDescription</key>
@@ -77,7 +79,36 @@
 			</array>
 		</dict>
 	</dict>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>play.fill</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Start</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>start</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>stop.fill</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Stop</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>stop</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>arrow.triangle.2.circlepath</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Toggle</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>toggle</string>
+		</dict>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
@@ -93,33 +124,6 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-	</array>
-	<key>UIApplicationShortcutItems</key>
-	<array>
-		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>start</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Start</string>
-			<key>UIApplicationShortcutItemIconSymbolName</key>
-			<string>play.fill</string>
-		</dict>
-		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>stop</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Stop</string>
-			<key>UIApplicationShortcutItemIconSymbolName</key>
-			<string>stop.fill</string>
-		</dict>
-		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>toggle</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Toggle</string>
-			<key>UIApplicationShortcutItemIconSymbolName</key>
-			<string>arrow.triangle.2.circlepath</string>
-		</dict>
 	</array>
 </dict>
 </plist>

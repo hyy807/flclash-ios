@@ -72,10 +72,22 @@ class ApplicationState extends ConsumerState<Application> {
     super.initState();
     SystemNavigator.setFrameworkHandlesBack(true);
     WidgetsBinding.instance.addPostFrameCallback((timeStamp) async {
-      if (globalState.navigatorKey.currentContext != null) {
+      final hasContext = globalState.navigatorKey.currentContext != null;
+      StartupTrace.mark('app: first frame', 'navigator=${hasContext ? 'ready' : 'missing'}');
+      if (hasContext) {
         await bootstrap.attach();
+        StartupTrace.mark('app: bootstrap attached');
       } else {
-        exit(0);
+        // Desktop quits here because a second instance owns the data directory.
+        // On a phone that turns a transient build failure into an immediate
+        // exit nobody can see, so wait for the tree instead of killing the app.
+        StartupTrace.mark('app: navigator missing, deferring attach');
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        final lateContext = globalState.navigatorKey.currentContext != null;
+        StartupTrace.mark('app: retry', 'navigator=${lateContext ? 'ready' : 'missing'}');
+        if (lateContext) {
+          await bootstrap.attach();
+        }
       }
       _autoUpdateProfilesTask();
       _initLink();

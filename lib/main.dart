@@ -13,12 +13,15 @@ import 'bootstrap.dart';
 import 'common/app_data.dart';
 import 'common/common.dart';
 import 'common/preferences_store.dart';
+import 'common/startup_trace.dart';
 import 'common/window.dart';
 
 void main(List<String> args) {
   runZonedGuarded(
     () async {
+      StartupTrace.mark('main: enter');
       WidgetsFlutterBinding.ensureInitialized();
+      StartupTrace.mark('main: binding ready');
       if (Platform.isWindows || Platform.isLinux) {
         SharedPreferencesStorePlatform.instance = AtomicFilePreferencesStore(
           appPath.sharedPreferencesPath,
@@ -28,6 +31,7 @@ void main(List<String> args) {
         linkManager.seedInitialLink(args);
       }
       FlutterError.onError = (details) {
+        StartupTrace.mark('flutterError', details.exception);
         Future.microtask(() {
           commonPrint.log(
             'exception: ${details.exception} stack: ${details.stack}',
@@ -36,12 +40,17 @@ void main(List<String> args) {
         });
       };
       try {
+        StartupTrace.mark('main: RustLib.init');
         await RustLib.init();
+        StartupTrace.mark('main: system.init');
         final version = await system.init();
+        StartupTrace.mark('main: bootstrap.init', version);
         final container = await bootstrap.init(version);
+        StartupTrace.mark('main: http overrides');
         await FlClashHttpOverrides.trustCoreRoots();
         HttpOverrides.global = FlClashHttpOverrides(container);
         request.attach(container.read);
+        StartupTrace.mark('main: runApp');
         runApp(
           UncontrolledProviderScope(
             container: container,
@@ -49,6 +58,7 @@ void main(List<String> args) {
           ),
         );
       } catch (e, s) {
+        traceError('main: init', e, s);
         runApp(
           InitErrorApp(
             error: e,
