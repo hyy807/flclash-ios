@@ -123,8 +123,12 @@ jobs:
           set -u
           rm -rf ~/Library/Developer/Xcode/DerivedData/Runner-* 2>/dev/null || true
           archive="$RUNNER_TEMP/FlClash.xcarchive"
-          for target in "$DEPLOY_TARGET" 16.0 17.0 18.0; do
-            echo "=== trying IPHONEOS_DEPLOYMENT_TARGET=$target ==="
+
+          # The project's own targets are the wanted ones: app and tunnel at
+          # 15.0, widget at 17.0 (its SwiftUI APIs need it). Overriding the
+          # deployment target on the command line hits every target at once and
+          # drags the widget below its minimum, so it is only a fallback.
+          run_archive() {
             rm -rf "$archive"
             xcodebuild archive \
               -workspace ios/Runner.xcworkspace \
@@ -134,20 +138,25 @@ jobs:
               -archivePath "$archive" \
               -skipPackagePluginValidation \
               -skipMacroValidation \
-              IPHONEOS_DEPLOYMENT_TARGET="$target" \
               APP_BUNDLE_ID="$BUNDLE_ID" \
               CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO > "$RUNNER_TEMP/xcodebuild-$target.log" 2>&1 || true
-            grep -E "error:|ARCHIVE SUCCEEDED|ARCHIVE FAILED" "$RUNNER_TEMP/xcodebuild-$target.log" | head -20 || true
-            if [ -d "$archive" ]; then
-              echo "ARCHIVED_WITH_TARGET=$target" | tee "$RUNNER_TEMP/used-target.txt"
-              break
+              CODE_SIGNING_REQUIRED=NO \
+              "$@" > "$RUNNER_TEMP/archive.log" 2>&1
+            test -d "$archive/Products/Applications/Runner.app"
+          }
+
+          if run_archive; then
+            echo "ARCHIVED with the project's deployment targets" | tee "$RUNNER_TEMP/used-target.txt"
+          else
+            echo "=== first attempt failed ==="
+            grep -E "error:" "$RUNNER_TEMP/archive.log" | head -20 || true
+            echo "=== retrying with IPHONEOS_DEPLOYMENT_TARGET=$DEPLOY_TARGET ==="
+            if ! run_archive IPHONEOS_DEPLOYMENT_TARGET="$DEPLOY_TARGET"; then
+              grep -E "error:" "$RUNNER_TEMP/archive.log" | head -20 || true
+              tail -80 "$RUNNER_TEMP/archive.log" || true
+              exit 1
             fi
-          done
-          if [ ! -d "$archive" ]; then
-            echo "=== xcodebuild failed for every deployment target ==="
-            tail -120 "$RUNNER_TEMP/xcodebuild-$DEPLOY_TARGET.log" || true
-            exit 1
+            echo "ARCHIVED with IPHONEOS_DEPLOYMENT_TARGET=$DEPLOY_TARGET" | tee "$RUNNER_TEMP/used-target.txt"
           fi
 
       - name: Package unsigned IPA
