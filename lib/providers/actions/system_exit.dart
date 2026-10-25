@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:fl_clash/common/startup_trace.dart';
+
 typedef ExitStep = Future<void> Function();
 
 final class SystemExitCoordinator {
@@ -29,6 +31,7 @@ final class SystemExitCoordinator {
   }
 
   Future<void> _run(ExitStep cleanup) async {
+    StartupTrace.mark('exit: coordinator run', StackTrace.current.toString().split('\n').take(6).join(' | '));
     Object? firstError;
     StackTrace? firstStackTrace;
 

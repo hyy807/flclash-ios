@@ -5,6 +5,7 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:fl_clash/common/boot_guard.dart';
 import 'package:fl_clash/common/boot_record.dart';
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/common/startup_trace.dart';
 import 'package:fl_clash/common/launch.dart';
 import 'package:fl_clash/common/migration.dart';
 import 'package:fl_clash/common/tray.dart';
@@ -99,9 +100,13 @@ class Bootstrap {
     int version,
     DynamicColorSeeds dynamicColor,
   ) async {
+    StartupTrace.mark('boot: claim dir');
     await _claimDataDirectory();
+    StartupTrace.mark('boot: package info');
     globalState.packageInfo = await PackageInfo.fromPlatform();
+    StartupTrace.mark('boot: migration');
     var config = await migration.run();
+    StartupTrace.mark('boot: guard');
     _bootDecision = await bootGuard.evaluate(
       profileId: config.currentProfileId,
     );
@@ -137,8 +142,10 @@ class Bootstrap {
           darkSeed: dynamicColor.darkSeed,
           accentColor: dynamicColor.accentColor,
         );
+    StartupTrace.mark('boot: database');
     final profiles = await database.profilesDao.query().get();
     container.read(profilesProvider.notifier).reorder(profiles);
+    StartupTrace.mark('boot: localizations');
     await AppLocalizations.load(
       getLocaleForString(config.appSettingProps.locale) ??
           WidgetsBinding.instance.platformDispatcher.locale,
@@ -179,7 +186,9 @@ class Bootstrap {
       return;
     }
     await _showCrashRecoveryTip();
+    StartupTrace.mark('app: startCore');
     await _container.read(coreActionProvider.notifier).startCore();
+    StartupTrace.mark('app: startCore done');
     if (!_bootDecision.isDegraded) {
       await _container.read(setupActionProvider.notifier).initStatus();
     }

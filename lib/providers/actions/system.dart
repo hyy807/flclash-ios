@@ -99,6 +99,7 @@ class SystemAction extends _$SystemAction {
 
   @protected
   Future<void> exitApplication() async {
+    StartupTrace.mark('exit: exitApplication', StackTrace.current.toString().split('\n').take(6).join(' | '));
     await system.exit();
     windowPort?.forceExit();
   }
