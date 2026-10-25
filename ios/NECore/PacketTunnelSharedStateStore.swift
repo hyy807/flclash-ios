@@ -1,11 +1,27 @@
 import Foundation
+import Security
 
 enum PacketTunnelEnvironment {
   static let extensionBundleIdentifier = Bundle.main.bundleIdentifier!
   static let baseBundleIdentifier = String(
     extensionBundleIdentifier.dropLast(".NECore".count)
   )
-  static let appGroupIdentifier = "group.\(baseBundleIdentifier)"
+  /// The group the extension was signed with. A re-signing tool may rename the
+  /// bundle and grant a different group; the entitlement is authoritative and
+  /// the derived name is only the fallback.
+  static let appGroupIdentifier: String = {
+    if let task = SecTaskCreateFromSelf(kCFAllocatorDefault),
+      let groups = SecTaskCopyValueForEntitlement(
+        task,
+        "com.apple.security.application-groups" as CFString,
+        nil
+      ) as? [String],
+      let group = groups.first
+    {
+      return group
+    }
+    return "group.\(baseBundleIdentifier)"
+  }()
   static let widgetIdentifier = "\(baseBundleIdentifier).Widget"
   static let eventNotificationName =
     "\(extensionBundleIdentifier).event"

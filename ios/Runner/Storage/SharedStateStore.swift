@@ -1,5 +1,32 @@
 import Foundation
+import Security
 import WidgetKit
+
+/// Resolves the App Group the app was *actually signed with*, not the one this
+/// build assumed.
+///
+/// An unsigned IPA is re-signed by whatever tool the user has (ESign,
+/// Sideloadly, AltStore, TrollStore). Those tools can rename the bundle and
+/// inject their own group, and a hard-coded `group.<bundle id>` then points at
+/// a container that does not exist — the app writes its state where the
+/// extension cannot read it, and the tunnel fails with missingVPN options.
+/// Reading the entitlement from our own signature makes the IPA portable.
+enum AppGroupResolver {
+  static func resolved(bundleIdentifier: String?) -> String {
+    if let task = SecTaskCreateFromSelf(kCFAllocatorDefault),
+      let groups = SecTaskCopyValueForEntitlement(
+        task,
+        "com.apple.security.application-groups" as CFString,
+        nil
+      ) as? [String],
+      let group = groups.first,
+      !group.isEmpty
+    {
+      return group
+    }
+    return "group.\(bundleIdentifier ?? "com.follow.clash")"
+  }
+}
 
 final class SharedStateStore {
   private let sharedStateKey = "sharedState"
@@ -8,7 +35,9 @@ final class SharedStateStore {
 
   private let eventQueueDirectoryName = "core-events"
 
-  let appGroupIdentifier = "group.\(Bundle.main.bundleIdentifier!)"
+  let appGroupIdentifier = AppGroupResolver.resolved(
+    bundleIdentifier: Bundle.main.bundleIdentifier
+  )
   let eventNotificationName = "\(Bundle.main.bundleIdentifier!).NECore.event"
 
   func activeVpnOptions() -> String? {
