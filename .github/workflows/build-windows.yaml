@@ -1,0 +1,85 @@
+name: build-windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v0.9.2-lx'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.47.6'
+  GO_VERSION: '1.27.3'
+
+jobs:
+  windows:
+    name: Windows amd64 release
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: core/go.sum
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            services/helper
+            plugins/rust_api/rust
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Enable git long paths
+        run: git config --global core.longpaths true
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Fetch CA certificates
+        shell: bash
+        run: |
+          bundle=core/Clash.Meta/component/ca/ca-certificates.crt
+          curl -fsSL --retry 3 -o "$bundle" https://curl.se/ca/cacert-2026-09-25.pem
+          echo "a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505  $bundle" | sha256sum -c -
+
+      - name: Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Windows release packages
+        shell: bash
+        run: |
+          dart setup.dart windows --env stable -v
+          find dist -maxdepth 1 -type f -print
+
+      - name: Verify stable package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -c 'import json; assert json.load(open("env.json"))["APP_ENV"] == "stable"'
+          for file in dist/*; do
+            ! grep -aEi 'APP_ENV.?=.?pre|pre-release|pretest' "$file" || exit 1
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlClash-LX-windows-amd64
+          path: ./dist/*
+          if-no-files-found: error

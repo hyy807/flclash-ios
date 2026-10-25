@@ -1,0 +1,4 @@
+[submodule "core/Clash.Meta"]
+	path = core/Clash.Meta
+	url = https://github.com/hyy807/Clash.Meta.git
+	branch = FlClash
