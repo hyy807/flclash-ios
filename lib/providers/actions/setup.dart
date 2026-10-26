@@ -283,6 +283,12 @@ class SetupAction extends _$SetupAction {
 
   /// An excluded SSID parks the listener without ending the run.
   void syncSuspend() {
+    // On iOS the packet tunnel owns the live core. Suspending the Flutter
+    // listener when the app changes lifecycle/network state calls stopListener
+    // and tears down the VPN while the extension is still healthy.
+    if (system.isIOS) {
+      return;
+    }
     debouncer.call(FunctionTag.suspend, () {
       return _listenerScheduler.run(() async {
         if (!ref.read(isStartProvider) || ref.read(safeModeProvider)) {
