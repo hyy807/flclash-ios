@@ -70,6 +70,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
       // starts the sampler.
       NECoreBridge.setMemoryLimit(0)
       let initParams = self.sharedStateStore.makeInitParams()
+      let home = self.sharedStateStore.appGroupDirectory()
+      let configURL = home?.appendingPathComponent("config.yaml")
+      let configSize = (try? configURL.map { try FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int ?? -1 }) ?? nil
+      self.sharedStateStore.trace("quickSetup home=\(home?.path ?? "nil") config.yaml=\(configSize.map { "\($0)B" } ?? "MISSING")")
       let setupParams = self.sharedStateStore.loadSetupParams()
       self.logger.info(
         "quickSetup initParams=\(initParams, privacy: .public)"
@@ -85,10 +89,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
           self.logger.error(
             "quickSetup failed: \(message, privacy: .public)"
           )
+          self.sharedStateStore.trace("quickSetup failed: \(message)")
           completionHandler(PacketTunnelProviderError.couldNotStartCoreTun)
           return
         }
         self.logger.info("quickSetup completed")
+        self.sharedStateStore.trace("quickSetup completed")
         let coreTunOptions = CoreTunOptions(
           stack: vpnOptions.stack,
           address: self.networkConfiguration.tunAddress(for: vpnOptions),
@@ -112,6 +118,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         self.logger.info(
           "NECoreBridge.startTun result=\(started, privacy: .public)"
         )
+        self.sharedStateStore.trace("startTun result=\(started)")
         if started {
           self.sharedStateStore.saveRunTime(vpnOptions: snapshot.data)
         }

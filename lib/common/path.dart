@@ -3,8 +3,38 @@ import 'dart:io';
 
 import 'package:fl_clash/common/common.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
+
+
+/// Moves an existing iOS install's data into the shared container once, so a
+/// profile imported before this change is still found by the tunnel.
+@visibleForTesting
+Future<Directory> migrateIOSDataDirectory({
+  required Directory supportDirectory,
+  required String appGroupPath,
+}) async {
+  final target = Directory(appGroupPath);
+  await target.create(recursive: true);
+  if (!await supportDirectory.exists() ||
+      supportDirectory.absolute.path == target.absolute.path) {
+    return target;
+  }
+  await for (final entity in supportDirectory.list(recursive: true)) {
+    final targetPath = join(
+      target.path,
+      relative(entity.path, from: supportDirectory.path),
+    );
+    if (entity is Directory) {
+      await Directory(targetPath).create(recursive: true);
+    } else if (entity is File && !await File(targetPath).exists()) {
+      await File(targetPath).parent.create(recursive: true);
+      await entity.copy(targetPath);
+    }
+  }
+  return target;
+}
 
 class AppPath {
   static AppPath? _instance;
@@ -40,8 +70,34 @@ class AppPath {
     await Future.wait([_dataDir.value, _downloadDir.value, _tempDir.value]);
   }
 
+
+  static const _appGroupChannel = MethodChannel('com.follow.clash/app_group');
+
+  /// On iOS the core runs inside the packet tunnel extension, which cannot see
+  /// the app's own sandbox. The profile, providers and geo data therefore have
+  /// to live in the App Group container that both processes share.
+  Future<Directory> _resolveDataDirectory() async {
+    final support = await supportDirectory();
+    if (!Platform.isIOS) {
+      return support;
+    }
+    try {
+      final groupPath =
+          await _appGroupChannel.invokeMethod<String>('containerPath');
+      if (groupPath == null || groupPath.isEmpty) {
+        return support;
+      }
+      return await migrateIOSDataDirectory(
+        supportDirectory: support,
+        appGroupPath: groupPath,
+      );
+    } catch (_) {
+      return support;
+    }
+  }
+
   void _bind() {
-    _dataDir = ResolveOnce(supportDirectory);
+    _dataDir = ResolveOnce(_resolveDataDirectory);
     _downloadDir = ResolveOnce(downloadDirectory);
     _tempDir = ResolveOnce(temporaryDirectory);
     cacheDirectory().then(cacheDir.complete);

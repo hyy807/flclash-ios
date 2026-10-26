@@ -207,5 +207,32 @@ enum StartupLog {
     StartupLog.mark("plugins registered")
     ServiceChannel.register(with: engineBridge.applicationRegistrar.messenger())
     StartupLog.mark("service channel registered")
+    registerAppGroupChannel(messenger: engineBridge.applicationRegistrar.messenger())
+  }
+}
+
+/// Tells Dart where the shared container is. The tunnel extension runs in its
+/// own sandbox and can only read the profile, providers and geo files if they
+/// live in the App Group; Dart's default Application Support directory is
+/// invisible to it, which made quickSetup fail with no config at all.
+private func registerAppGroupChannel(messenger: FlutterBinaryMessenger) {
+  let channel = FlutterMethodChannel(
+    name: "com.follow.clash/app_group",
+    binaryMessenger: messenger
+  )
+  channel.setMethodCallHandler { call, result in
+    guard call.method == "containerPath" else {
+      result(FlutterMethodNotImplemented)
+      return
+    }
+    let group = AppGroupProfileResolver.resolve(
+      bundleURL: Bundle.main.bundleURL,
+      fallbackBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.follow.clash"
+    )
+    let url = FileManager.default.containerURL(
+      forSecurityApplicationGroupIdentifier: group
+    )
+    StartupLog.mark("app group container for Dart: \(group) -> \(url?.path ?? "nil")")
+    result(url?.path)
   }
 }
