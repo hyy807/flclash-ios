@@ -281,29 +281,49 @@ final class TunnelCoordinator {
         }
       }
 
-      var appliedManager: NETunnelProviderManager?
-      for attempt in 0..<300 {
-        try? await Task.sleep(nanoseconds: 200_000_000)
+      // The reloaded configuration is what actually matters, and on this device
+      // it comes back with isEnabled=false: iOS keeps a configuration disabled
+      // until the add-VPN / Face ID confirmation completes. So re-enable it and
+      // wait for the flag to flip instead of failing straight away.
+      var readyManager: NETunnelProviderManager?
+      for attempt in 0..<130 {
+        try? await Task.sleep(nanoseconds: 500_000_000)
         guard isCurrent(request) else {
           return
         }
-        if let candidate = await managerStore.reloadManagedManager(),
-          candidate.isEnabled
-        {
-          appliedManager = candidate
+        guard let candidate = await managerStore.reloadManagedManager() else {
+          if attempt % 4 == 0 {
+            StartupLog.mark("tunnel: no saved configuration yet attempt=\(attempt)")
+          }
+          continue
+        }
+        if candidate.isEnabled {
           managerStore.adopt(candidate)
-          StartupLog.mark("tunnel: configuration applied after \(attempt * 200)ms")
+          readyManager = candidate
+          StartupLog.mark("tunnel: configuration enabled after \(attempt * 500)ms")
           break
         }
+        if attempt % 20 == 0 {
+          StartupLog.mark(
+            "tunnel: waiting for the configuration to be enabled attempt=\(attempt) status=\(candidate.connection.status.rawValue) — approve the VPN prompt / Face ID if it is on screen"
+          )
+          managerStore.adopt(candidate)
+          candidate.isEnabled = true
+          managerStore.applyNetworkExtensionOptions(to: candidate, enableOnDemand: false)
+          candidate.saveToPreferences { error in
+            StartupLog.mark("tunnel: enable save error=\(error?.localizedDescription ?? "none")")
+          }
+        }
       }
-      guard let activeManager = appliedManager else {
-        StartupLog.mark(
-          "tunnel: configuration never appeared in preferences (60s) — if an allow-VPN dialog is on screen, tap it and toggle again"
-        )
+      guard let activeManager = readyManager else {
+        StartupLog.mark("tunnel: configuration stayed disabled for 65s")
         throw NSError(
           domain: "FlClash",
           code: -1002,
-          userInfo: [NSLocalizedDescriptionKey: "tunnel configuration did not persist"]
+          userInfo: [
+            NSLocalizedDescriptionKey:
+              "tunnel configuration stayed disabled: iOS needs the add-VPN prompt / Face ID confirmation"
+          ]
         )
       }
       guard isCurrent(request) else {
