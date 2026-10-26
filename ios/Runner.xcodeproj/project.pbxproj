@@ -17,7 +17,6 @@
 		05A0DDAD2FFA467400C9D0AA /* libShared.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 05A0DCD82FFA45A600C9D0AA /* libShared.a */; };
 		05F01D332FF9245600136695 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 05F01D322FF9245600136695 /* WidgetKit.framework */; };
 		05F01D352FF9245600136695 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 05F01D342FF9245600136695 /* SwiftUI.framework */; };
-		05F01D422FF9245800136695 /* Widget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 05F01D312FF9245600136695 /* Widget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		05F01D4A2FF9245800136695 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 059852A52FF20A1200620D82 /* NetworkExtension.framework */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
@@ -52,13 +51,6 @@
 			remoteGlobalIDString = 059852A32FF20A1200620D82;
 			remoteInfo = NECore;
 		};
-		05F01D402FF9245800136695 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 05F01D302FF9245600136695;
-			remoteInfo = WidgetExtension;
-		};
 		331C8085294A63A400263BE5 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
@@ -76,7 +68,6 @@
 			dstSubfolderSpec = 13;
 			files = (
 				059852AE2FF20A1200620D82 /* NECore.appex in Embed Foundation Extensions */,
-				05F01D422FF9245800136695 /* Widget.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -465,7 +456,6 @@
 			);
 			dependencies = (
 				059852AD2FF20A1200620D82 /* PBXTargetDependency */,
-				05F01D412FF9245800136695 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			packageProductDependencies = (
@@ -683,11 +673,6 @@
 			isa = PBXTargetDependency;
 			target = 059852A32FF20A1200620D82 /* NECore */;
 			targetProxy = 059852AC2FF20A1200620D82 /* PBXContainerItemProxy */;
-		};
-		05F01D412FF9245800136695 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 05F01D302FF9245600136695 /* Widget */;
-			targetProxy = 05F01D402FF9245800136695 /* PBXContainerItemProxy */;
 		};
 		331C8086294A63A400263BE5 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;

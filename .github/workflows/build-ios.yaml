@@ -146,17 +146,20 @@ jobs:
             test -d "$archive/Products/Applications/Runner.app"
           }
 
-          # 18.0 is what actually builds: the widget target needs the iOS 18
-          # ControlWidget APIs, and Xcode resolves the extension's deployment
-          # target from the build invocation, not only from the pbxproj. This
-          # raises the app's minimum to 18.0; dropping the Widget target is what
-          # would bring it back down to 15/16/17.
-          if run_archive IPHONEOS_DEPLOYMENT_TARGET=18.0; then
-            echo "ARCHIVED with IPHONEOS_DEPLOYMENT_TARGET=18.0" | tee "$RUNNER_TEMP/used-target.txt"
+          # The widget extension is gone, so nothing forces iOS 18 any more:
+          # build with the project's own targets (app and tunnel at 15.0) and
+          # keep the old override only as a fallback if a toolchain refuses.
+          if run_archive; then
+            echo "ARCHIVED with the project's deployment targets" | tee "$RUNNER_TEMP/used-target.txt"
           else
             grep -E "error:" "$RUNNER_TEMP/archive.log" | head -20 || true
-            tail -60 "$RUNNER_TEMP/archive.log" || true
-            exit 1
+            echo "=== retrying with IPHONEOS_DEPLOYMENT_TARGET=$DEPLOY_TARGET ==="
+            if ! run_archive IPHONEOS_DEPLOYMENT_TARGET="$DEPLOY_TARGET"; then
+              grep -E "error:" "$RUNNER_TEMP/archive.log" | head -20 || true
+              tail -60 "$RUNNER_TEMP/archive.log" || true
+              exit 1
+            fi
+            echo "ARCHIVED with IPHONEOS_DEPLOYMENT_TARGET=$DEPLOY_TARGET" | tee "$RUNNER_TEMP/used-target.txt"
           fi
 
       - name: Package unsigned IPA
@@ -165,8 +168,11 @@ jobs:
           app="$RUNNER_TEMP/FlClash.xcarchive/Products/Applications/Runner.app"
           test -d "$app"
           # A green archive with no extension can never start a VPN: assert it.
-          ls -d "$app/PlugIns/"*.appex
+          # Only the tunnel ships now; the widget target was dropped so the app
+          # needs one provisioning identity instead of three.
+          ls -1 "$app/PlugIns/"
           test -d "$app/PlugIns/NECore.appex"
+          test "$(ls -1d "$app/PlugIns/"*.appex | wc -l | tr -d ' ')" = "1"
           plutil -p "$app/PlugIns/NECore.appex/Info.plist" | grep -q "com.apple.networkextension.packet-tunnel"
 
           mkdir -p "$RUNNER_TEMP/ipa/Payload" output
