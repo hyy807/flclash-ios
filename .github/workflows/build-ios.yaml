@@ -175,7 +175,11 @@ jobs:
           # signing tool will fight it.
           find "$RUNNER_TEMP/ipa/Payload" -name _CodeSignature -type d -prune -exec rm -rf {} +
           find "$RUNNER_TEMP/ipa/Payload" -name embedded.mobileprovision -delete || true
-          find "$RUNNER_TEMP/ipa/Payload" -name "*.xcent" -delete || true
+          # Keep archived-expanded-entitlements.xcent: signing tools read it to
+          # know which capabilities the bundle is meant to carry (packet tunnel,
+          # App Group). Deleting it made a re-sign produce a VPN client without
+          # the NetworkExtension entitlement.
+          find "$RUNNER_TEMP/ipa/Payload" -name "*.xcent" -print
 
           name="FlClash-0.9.2-ios-arm64-unsigned.ipa"
           ( cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/output/$name" Payload )
