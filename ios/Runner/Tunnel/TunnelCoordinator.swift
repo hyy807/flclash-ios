@@ -213,7 +213,7 @@ final class TunnelCoordinator {
         log(
           "\(request.target.description) failed: \(error.localizedDescription)"
         )
-        {
+        do {
           let nsError = error as NSError
           StartupLog.mark(
             "tunnel: \(request.target.description) FAILED domain=\(nsError.domain) code=\(nsError.code) \(nsError.localizedDescription) userInfo=\(nsError.userInfo.keys.joined(separator: ","))"
