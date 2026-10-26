@@ -5,6 +5,7 @@ import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/core/event.dart';
 import 'package:fl_clash/core/method.dart';
 import 'package:fl_clash/core/spill.dart';
+import 'package:fl_clash/common/startup_trace.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:flutter/foundation.dart';
@@ -84,10 +85,12 @@ class Service {
   }
 
   Future<CoreMethodResponse?> invokeMethod(CoreMethodCall call) async {
+    StartupTrace.mark('core: call ${call.method.name}');
     final data = await _coreChannel.invokeMethod<Uint8List>(
       'invokeMethod',
       json.encode(call),
     );
+    StartupTrace.mark('core: reply ${call.method.name}', data?.length ?? 0);
     if (data == null) {
       return null;
     }
