@@ -22,6 +22,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     sharedStateStore.trace("startTunnel begin options=\(options?.keys.joined(separator: ",") ?? "nil")")
     sharedStateStore.clearRunTime()
     reloadWidgets()
+    sharedStateStore.trace(sharedStateStore.describeSharedState())
     guard let snapshot = sharedStateStore.loadVPNOptionsSnapshot() else {
       logger.error("startTunnel failed: missing vpn options")
       sharedStateStore.trace("startTunnel failed: missing vpn options snapshot")

@@ -24,6 +24,24 @@ final class PacketTunnelSharedStateStore {
   private let runTimeKey = "runTime"
   private let activeVpnOptionsKey = "activeVpnOptions"
 
+  /// Describes what the shared container looks like from inside the extension.
+  /// "missing vpn options" alone cannot tell a wrong App Group from a wrong
+  /// payload, and those need completely different fixes.
+  func describeSharedState() -> String {
+    let group = PacketTunnelEnvironment.appGroupIdentifier
+    let defaults = userDefaults
+    let data = defaults?.data(forKey: sharedStateKey)
+    var keys = "-"
+    if let data,
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+      keys = json.keys.sorted().joined(separator: ",")
+    } else if let data {
+      keys = "not-a-dictionary(\(data.count)B)"
+    }
+    let container = appGroupDirectory() == nil ? "no-container" : "container-ok"
+    return "shared state group=\(group) defaults=\(defaults == nil ? "nil" : "ok") container=\(container) bytes=\(data?.count ?? -1) keys=\(keys)"
+  }
+
   func loadVPNOptionsSnapshot() -> (options: PacketTunnelVPNOptions, data: Data)? {
     guard let sharedData = userDefaults?.data(forKey: sharedStateKey),
       let shared = try? JSONSerialization.jsonObject(with: sharedData) as? [String: Any],
@@ -131,6 +149,7 @@ struct PacketTunnelVPNOptions: Decodable {
     case port
     case ipv6
     case captureDns
+    case dnsHijacking
     case systemProxy
     case bypassDomain
     case stack
@@ -151,15 +170,22 @@ struct PacketTunnelVPNOptions: Decodable {
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    port = try container.decode(Int.self, forKey: .port)
-    ipv6 = try container.decode(Bool.self, forKey: .ipv6)
-    captureDns = try container.decode(Bool.self, forKey: .captureDns)
-    systemProxy = try container.decode(Bool.self, forKey: .systemProxy)
+    port = try container.decodeIfPresent(Int.self, forKey: .port) ?? 0
+    ipv6 = try container.decodeIfPresent(Bool.self, forKey: .ipv6) ?? false
+    // Dart names this one dnsHijacking; the host layer was written against a
+    // payload that called it captureDns. Requiring the wrong key made the whole
+    // decode fail, which surfaced as "missing vpn options" inside the tunnel.
+    if let captureDnsValue = try container.decodeIfPresent(Bool.self, forKey: .captureDns) {
+      captureDns = captureDnsValue
+    } else {
+      captureDns = try container.decodeIfPresent(Bool.self, forKey: .dnsHijacking) ?? false
+    }
+    systemProxy = try container.decodeIfPresent(Bool.self, forKey: .systemProxy) ?? false
     bypassDomain = try container.decodeIfPresent(
       [String].self,
       forKey: .bypassDomain
     ) ?? []
-    stack = try container.decode(String.self, forKey: .stack)
+    stack = try container.decodeIfPresent(String.self, forKey: .stack) ?? "gvisor"
     mtu = try container.decodeIfPresent(Int.self, forKey: .mtu) ?? 9000
     routeAddress = try container.decodeIfPresent(
       [String].self,
