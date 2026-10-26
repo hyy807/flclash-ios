@@ -144,10 +144,18 @@ func (t tunCallbacks) ResolvePackage(uid int) string {
 //export invokeMethod
 func invokeMethod(callback unsafe.Pointer, paramsChar *C.char) {
 	params := takeCString(paramsChar)
-	defer releaseObject(callback)
-	core.InvokeMethod(params, func(result []byte) {
+	// The core dispatches every method on its own goroutine (core/method.go:
+	// dispatchMethodCall -> safeGo), so the reply arrives after this function
+	// returns. Releasing the Objective-C block here would free it before the
+	// answer is delivered: the Swift continuation then never resumes, which is
+	// exactly the black screen observed on device (syncState finished, then
+	// getIsInit never came back). Release once, after the reply is written.
+	var once sync.Once
+	reply := func(result []byte) {
 		invokeResult(callback, string(result))
-	})
+		once.Do(func() { releaseObject(callback) })
+	}
+	core.InvokeMethod(params, reply)
 }
 
 //export quickSetup
