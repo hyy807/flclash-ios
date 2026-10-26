@@ -131,6 +131,7 @@ enum StartupLog {
   ) -> Bool {
     StartupLog.mark("didFinishLaunching")
     StartupLog.dumpSignedProfile()
+    StartupLog.mark("signed: \(IOSCoreBridge.effectiveEntitlements())")
     StartupLog.armQuitProbe()
     atexit {
       StartupLog.mark("atexit fired")

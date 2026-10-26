@@ -4,6 +4,15 @@
 #import "../../libclash/ios/arm64/libclash.h"
 #import <os/log.h>
 #import <string.h>
+#import <Security/Security.h>
+
+// Not public on iOS, but exported by the Security framework and the only way to
+// read a process's own entitlements there.
+extern CFTypeRef SecTaskCreateFromSelf(CFAllocatorRef allocator);
+extern CFTypeRef SecTaskCopyValueForEntitlement(
+    CFTypeRef task,
+    CFStringRef entitlement,
+    CFErrorRef *error);
 
 static void IOSCoreReleaseObject(void *obj) {
   if (obj != NULL) {
@@ -88,6 +97,29 @@ static void IOSCoreSystemLog(const char *level, const char *message) {
 }
 
 @implementation IOSCoreBridge
+
++ (NSString *)effectiveEntitlements {
+  CFTypeRef task = SecTaskCreateFromSelf(kCFAllocatorDefault);
+  if (task == NULL) {
+    return @"SecTask unavailable";
+  }
+  NSString * (^read)(NSString *) = ^NSString *(NSString *key) {
+    CFTypeRef value = SecTaskCopyValueForEntitlement(
+        task, (__bridge CFStringRef)key, NULL);
+    if (value == NULL) {
+      return @"ABSENT";
+    }
+    return [NSString stringWithFormat:@"%@", (__bridge id)value];
+  };
+  NSString *result = [NSString stringWithFormat:
+      @"appId=%@ ne=%@ groups=%@ getTaskAllow=%@",
+      read(@"application-identifier"),
+      read(@"com.apple.developer.networking.networkextension"),
+      read(@"com.apple.security.application-groups"),
+      read(@"get-task-allow")];
+  CFRelease(task);
+  return result;
+}
 
 + (void)initializeBridge {
   static dispatch_once_t onceToken;
