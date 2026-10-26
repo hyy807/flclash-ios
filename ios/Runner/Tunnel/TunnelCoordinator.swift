@@ -236,7 +236,7 @@ final class TunnelCoordinator {
       guard isCurrent(request) else {
         return
       }
-      guard let manager = loadedManager else {
+      guard var manager = loadedManager else {
         recordObservedTunnelStatus(.invalid, notifyExternal: false)
         finishTunnelRequest(request, actualState: .stopped)
         return
@@ -268,38 +268,50 @@ final class TunnelCoordinator {
       StartupLog.mark(
         "tunnel: save preferences provider=\(manager.protocolConfiguration?.value(forKey: "providerBundleIdentifier") as? String ?? "nil") enabled=\(manager.isEnabled) status=\(manager.connection.status.rawValue)"
       )
-      do {
-        try await awaitPreferenceResult { completion in
-          manager.saveToPreferences(completionHandler: completion)
+      // The save completion handler is not delivered on this device: the
+      // configuration is written (the connection flips to disconnected) but the
+      // callback never arrives, so waiting for it is exactly what stopped the
+      // VPN from ever starting. Save without waiting, then confirm the write by
+      // re-reading the list, which does answer.
+      manager.saveToPreferences { error in
+        if let error {
+          StartupLog.mark("tunnel: save completion error=\(error.localizedDescription)")
+        } else {
+          StartupLog.mark("tunnel: save completion ok")
         }
-      } catch {
+      }
+
+      var appliedManager: NETunnelProviderManager?
+      for attempt in 0..<300 {
+        try? await Task.sleep(nanoseconds: 200_000_000)
         guard isCurrent(request) else {
           return
         }
-        if finishRunningRequestIfSatisfied(request, manager: manager) {
-          return
+        if let candidate = await managerStore.reloadManagedManager(),
+          candidate.isEnabled
+        {
+          appliedManager = candidate
+          managerStore.adopt(candidate)
+          StartupLog.mark("tunnel: configuration applied after \(attempt * 200)ms")
+          break
         }
-        throw error
+      }
+      guard let activeManager = appliedManager else {
+        StartupLog.mark(
+          "tunnel: configuration never appeared in preferences (60s) — if an allow-VPN dialog is on screen, tap it and toggle again"
+        )
+        throw NSError(
+          domain: "FlClash",
+          code: -1002,
+          userInfo: [NSLocalizedDescriptionKey: "tunnel configuration did not persist"]
+        )
       }
       guard isCurrent(request) else {
         return
       }
-
-      log("start reload preferences")
-      do {
-        try await awaitPreferenceResult { completion in
-          manager.loadFromPreferences(completionHandler: completion)
-        }
-      } catch {
-        guard isCurrent(request) else {
-          return
-        }
-        if finishRunningRequestIfSatisfied(request, manager: manager) {
-          return
-        }
-        throw error
-      }
-      guard isCurrent(request) else {
+      manager = activeManager
+      if manager.connection.status.tunnelState == .running {
+        finishTunnelRequest(request, actualState: .running)
         return
       }
 

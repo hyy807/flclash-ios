@@ -160,6 +160,31 @@ final class TunnelManagerStore {
     )
   }
 
+  /// Re-reads the saved configurations without touching the cache.
+  ///
+  /// `saveToPreferences` on this device never calls back, so the only reliable
+  /// way to learn whether a configuration was written is to ask for the list
+  /// again. The class method answers immediately, unlike the instance callback.
+  func reloadManagedManager() async -> NETunnelProviderManager? {
+    await withCheckedContinuation {
+      (continuation: CheckedContinuation<NETunnelProviderManager?, Never>) in
+      NETunnelProviderManager.loadAllFromPreferences { managers, error in
+        DispatchQueue.main.async {
+          if let error {
+            self.log("reloadManagedManager error=\(error.localizedDescription)")
+          }
+          continuation.resume(returning: managers?.first(where: self.isManagedManager))
+        }
+      }
+    }
+  }
+
+  /// Makes `manager` the cached one so connection notifications keep matching.
+  func adopt(_ manager: NETunnelProviderManager) {
+    cacheState = .loaded(manager)
+    log("adopt manager enabled=\(manager.isEnabled) status=\(manager.connection.status.rawValue)")
+  }
+
   func isManagedConnection(_ connection: NEVPNConnection) -> Bool {
     guard
       let proto = connection.manager.protocolConfiguration
