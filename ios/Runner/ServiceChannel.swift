@@ -110,14 +110,15 @@ final class ServiceChannel {
         routerReference.value?.updateTunnelState(state)
       },
       onConnectionStateChanged: { state in
-        // FlClash's Dart side understands exactly two pushes from native:
-        // `event` (core events) and `stopped` (the tunnel ended). Sending
-        // anything else raises MissingPluginException over there.
-        guard state != "connected" else {
+        // Pending includes connecting/disconnecting and is NOT a stopped run.
+        // Reporting it as stopped makes Dart roll back and stop the tunnel
+        // while startTunnel is still completing.
+        guard state == "disconnected" else {
           return
         }
+        let revision = revisionBox.value
         Task { @MainActor in
-          channel.invokeMethod("stopped", arguments: revisionBox.value)
+          channel.invokeMethod("stopped", arguments: revision)
         }
       },
       onExternalStart: {},
