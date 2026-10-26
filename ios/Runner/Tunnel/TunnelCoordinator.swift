@@ -799,7 +799,7 @@ final class TunnelCoordinator {
       self.continuation = continuation
     }
 
-    func finish(_ error: Error?) {
+    func finish(_ error: Error?, onWin: () -> Void = {}) {
       lock.lock()
       if finished {
         lock.unlock()
@@ -807,6 +807,7 @@ final class TunnelCoordinator {
       }
       finished = true
       lock.unlock()
+      onWin()
       if let error {
         continuation.resume(throwing: error)
       } else {
@@ -829,13 +830,15 @@ final class TunnelCoordinator {
       // request hanging with no diagnostic at all.
       Task {
         try? await Task.sleep(nanoseconds: 60_000_000_000)
-        StartupLog.mark("tunnel: preferences call timed out after 60s — an add-VPN / Face ID prompt may be waiting for approval")
         once.finish(
           NSError(
             domain: "FlClash",
             code: -1001,
             userInfo: [NSLocalizedDescriptionKey: "preferences call timed out after 60s"]
-          )
+          ),
+          onWin: {
+            StartupLog.mark("tunnel: preferences operation did not complete within 60s")
+          }
         )
       }
     }
