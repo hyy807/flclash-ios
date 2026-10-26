@@ -191,3 +191,75 @@ static void NECoreSystemLog(const char *level, const char *message) {
 }
 
 @end
+
+#pragma mark - launch trace
+
+// Reads the app group out of the containing app's provisioning profile. The
+// signer only embeds a profile in the app bundle, so the appex borrows it.
+static NSString *NECoreAppGroupIdentifier(void) {
+  NSURL *bundleURL = [NSBundle mainBundle].bundleURL;
+  NSURL *appURL = bundleURL;
+  if ([bundleURL.pathExtension isEqualToString:@"appex"]) {
+    appURL = [[bundleURL URLByDeletingLastPathComponent] URLByDeletingLastPathComponent];
+  }
+  NSURL *profileURL = [appURL URLByAppendingPathComponent:@"embedded.mobileprovision"];
+  NSData *data = [NSData dataWithContentsOfURL:profileURL];
+  if (data == nil) {
+    return nil;
+  }
+  NSRange start = [data rangeOfData:[@"<?xml" dataUsingEncoding:NSUTF8StringEncoding]
+                            options:0
+                              range:NSMakeRange(0, data.length)];
+  if (start.location == NSNotFound) {
+    return nil;
+  }
+  NSRange tail = NSMakeRange(start.location, data.length - start.location);
+  NSRange end = [data rangeOfData:[@"</plist>" dataUsingEncoding:NSUTF8StringEncoding]
+                          options:0
+                            range:tail];
+  if (end.location == NSNotFound) {
+    return nil;
+  }
+  NSRange plistRange = NSMakeRange(start.location, NSMaxRange(end) - start.location);
+  NSDictionary *plist = [NSPropertyListSerialization propertyListWithData:[data subdataWithRange:plistRange]
+                                                                options:0
+                                                                 format:NULL
+                                                                  error:NULL];
+  NSArray *groups = plist[@"Entitlements"][@"com.apple.security.application-groups"];
+  return [groups isKindOfClass:[NSArray class]] ? groups.firstObject : nil;
+}
+
+static void NECoreTraceLine(NSString *line) {
+  NSString *group = NECoreAppGroupIdentifier();
+  if (group.length == 0) {
+    return;
+  }
+  NSURL *directory = [[NSFileManager defaultManager]
+      containerURLForSecurityApplicationGroupIdentifier:group];
+  if (directory == nil) {
+    return;
+  }
+  NSURL *url = [directory URLByAppendingPathComponent:@"extension-start.log"];
+  NSString *text = [NSString stringWithFormat:@"%@ [ext] %@\n", [NSDate date], line];
+  NSData *payload = [text dataUsingEncoding:NSUTF8StringEncoding];
+  NSFileManager *manager = [NSFileManager defaultManager];
+  if (![manager fileExistsAtPath:url.path]) {
+    [payload writeToURL:url atomically:YES];
+    return;
+  }
+  NSFileHandle *handle = [NSFileHandle fileHandleForWritingToURL:url error:NULL];
+  if (handle == nil) {
+    return;
+  }
+  [handle seekToEndOfFile];
+  [handle writeData:payload];
+  [handle closeFile];
+}
+
+// Runs as soon as dyld finishes loading this bundle, before Swift starts, so a
+// missing line proves the process was never launched at all.
+__attribute__((constructor)) static void NECoreExtensionDidLoad(void) {
+  @autoreleasepool {
+    NECoreTraceLine(@"process loaded (dyld constructor)");
+  }
+}

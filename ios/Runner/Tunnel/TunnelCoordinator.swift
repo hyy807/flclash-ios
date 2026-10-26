@@ -331,6 +331,11 @@ final class TunnelCoordinator {
       }
       switch result {
       case .status(let status):
+        if status.tunnelState != .running {
+          // The tunnel fell straight back: whatever the extension managed to
+          // write belongs in this log, not in the next session.
+          StartupLog.importExtensionTrace()
+        }
         finishTunnelRequest(
           request,
           actualState: status.tunnelState
