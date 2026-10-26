@@ -1,4 +1,5 @@
 import Flutter
+import NetworkExtension
 import UIKit
 import os
 
@@ -72,6 +73,32 @@ enum StartupLog {
     mark("profile: allEntitlements=\(entitlements.keys.sorted().joined(separator: ","))")
   }
 
+
+  /// Asks NetworkExtension for the saved configurations and logs the outcome.
+  ///
+  /// saveToPreferences never calling back is ambiguous: it can be the daemon
+  /// refusing us (signing/entitlement) or a configuration problem. A read that
+  /// answers immediately proves the framework talks to us at all, and its error
+  /// domain/code says why it would not.
+  static func probeNetworkExtension() {
+    NETunnelProviderManager.loadAllFromPreferences { managers, error in
+      if let error {
+        let nsError = error as NSError
+        StartupLog.mark(
+          "ne probe: loadAllFromPreferences FAILED domain=\(nsError.domain) code=\(nsError.code) \(nsError.localizedDescription)"
+        )
+        return
+      }
+      StartupLog.mark("ne probe: loadAllFromPreferences ok managers=\(managers?.count ?? 0)")
+      for manager in managers ?? [] {
+        let proto = manager.protocolConfiguration as? NETunnelProviderProtocol
+        StartupLog.mark(
+          "ne probe: manager enabled=\(manager.isEnabled) status=\(manager.connection.status.rawValue) provider=\(proto?.providerBundleIdentifier ?? "nil")"
+        )
+      }
+    }
+  }
+
   static func append(_ line: String, to url: URL) {
     guard let data = line.data(using: .utf8) else {
       return
@@ -132,6 +159,7 @@ enum StartupLog {
     StartupLog.mark("didFinishLaunching")
     StartupLog.dumpSignedProfile()
     StartupLog.mark("signed: \(IOSCoreBridge.effectiveEntitlements())")
+    StartupLog.probeNetworkExtension()
     StartupLog.armQuitProbe()
     atexit {
       StartupLog.mark("atexit fired")
