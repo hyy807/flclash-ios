@@ -188,7 +188,9 @@ final class ServiceChannel {
     switch call.method {
     case "start":
       commandRevision.value = call.arguments as? Int ?? commandRevision.value
+      StartupLog.mark("vpn: start requested revision=\(commandRevision.value)")
       tunnelController.start()
+      StartupLog.mark("vpn: start dispatched")
       result(true)
     case "stop":
       commandRevision.value = call.arguments as? Int ?? commandRevision.value
@@ -199,6 +201,7 @@ final class ServiceChannel {
       coreEventRelay.drainEventQueue()
       result("")
     case "syncState":
+      StartupLog.mark("vpn: syncState")
       syncState(call, result: result)
     case "shutdown":
       Task {
