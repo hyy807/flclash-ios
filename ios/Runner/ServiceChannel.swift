@@ -223,21 +223,24 @@ final class ServiceChannel {
   }
 
   private func syncState(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    StartupLog.mark("syncState: appGroup=\(sharedStateStore.appGroupIdentifier)")
     guard let message = call.arguments as? String,
       let data = message.data(using: .utf8),
       sharedStateStore.saveSharedState(data)
     else {
-      log("saveSharedState failed")
+      StartupLog.mark("syncState: saveSharedState FAILED")
       result("failed to sync shared state")
       return
     }
     log("saveSharedState bytes=\(data.count)")
+    StartupLog.mark("syncState: saved bytes=\(data.count)")
     result("")
     Task {
       do {
         try await tunnelController.reloadOnDemandRules()
+        StartupLog.mark("syncState: on-demand rules reloaded")
       } catch {
-        log("syncState preferences failed: \(error.localizedDescription)")
+        StartupLog.mark("syncState: reload failed :: \(error.localizedDescription)")
       }
     }
   }

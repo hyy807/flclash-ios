@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/common/startup_trace.dart';
 import 'package:fl_clash/plugins/service.dart';
 import 'package:fl_clash/providers/providers.dart';
 import 'package:fl_clash/state.dart';
@@ -60,6 +61,7 @@ class CoreLib extends CoreHandlerInterface {
           globalState.container.read(sharedStateProvider),
         ) ??
         '';
+    StartupTrace.mark('core: syncState returned', syncError.isEmpty ? 'ok' : syncError);
     if (syncError.isNotEmpty) {
       _connectedCompleter = Completer<bool>();
       await _service?.shutdown();

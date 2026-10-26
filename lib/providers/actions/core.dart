@@ -26,8 +26,11 @@ class CoreAction extends _$CoreAction {
     ref.read(coreStatusProvider.notifier).value = CoreStatus.connecting;
     try {
       final result = await startLifecycle();
+      StartupTrace.mark('core: lifecycle applied', result.outcome.name);
       await _applyLifecycleResult(result);
-    } catch (error) {
+      StartupTrace.mark('core: startCore done');
+    } catch (error, stackTrace) {
+      StartupTrace.mark('core: startCore FAILED', error);
       ref.read(coreStatusProvider.notifier).value = CoreStatus.disconnected;
       dialogs.showNotifier(error.toString(), level: MessageLevel.error);
     }
