@@ -262,40 +262,10 @@ final class TunnelCoordinator {
         continue
       }
 
-      manager.isEnabled = true
-      managerStore.applyNetworkExtensionOptions(to: manager, enableOnDemand: true)
-      log("start save preferences")
-      StartupLog.mark(
-        "tunnel: save preferences provider=\(manager.protocolConfiguration?.value(forKey: "providerBundleIdentifier") as? String ?? "nil") enabled=\(manager.isEnabled) status=\(manager.connection.status.rawValue)"
-      )
-      // The completion handler does arrive on this device, it just takes a few
-      // seconds (observed 2-4s), so give it room instead of timing out early.
-      // Preference operations are serialised by the daemon: never start one
-      // while another is still in flight, or both hang forever.
-      try await awaitPreferenceResult { completion in
-        manager.saveToPreferences(completionHandler: completion)
-      }
+      try await prepareTunnelPreferences(manager: manager, request: request)
       guard isCurrent(request) else {
         return
       }
-      if !manager.isEnabled {
-        manager.isEnabled = true
-        try await awaitPreferenceResult { completion in
-          manager.saveToPreferences(completionHandler: completion)
-        }
-        guard isCurrent(request) else {
-          return
-        }
-      }
-      try await awaitPreferenceResult { completion in
-        manager.loadFromPreferences(completionHandler: completion)
-      }
-      guard isCurrent(request) else {
-        return
-      }
-      StartupLog.mark(
-        "tunnel: preferences ready enabled=\(manager.isEnabled) status=\(manager.connection.status.rawValue)"
-      )
 
       let preparedStatus = manager.connection.status
       recordObservedTunnelStatus(preparedStatus, notifyExternal: false)
@@ -341,6 +311,68 @@ final class TunnelCoordinator {
       }
       return
     }
+  }
+
+
+  // Preference calls must never overlap: the daemon serialises them, so a second
+  // save/load issued while the first is still waiting (the add-VPN prompt keeps
+  // it waiting until the user answers) leaves both hanging forever. Every Dart
+  // retry submits a new request, so the older flow has to queue here.
+  private var preferenceLockBusy = false
+  private var preferenceLockWaiters: [CheckedContinuation<Void, Never>] = []
+
+  private func acquirePreferenceLock() async {
+    if !preferenceLockBusy {
+      preferenceLockBusy = true
+      return
+    }
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+      preferenceLockWaiters.append(continuation)
+    }
+  }
+
+  private func releasePreferenceLock() {
+    if preferenceLockWaiters.isEmpty {
+      preferenceLockBusy = false
+      return
+    }
+    let next = preferenceLockWaiters.removeFirst()
+    next.resume()
+  }
+
+  private func prepareTunnelPreferences(
+    manager: NETunnelProviderManager,
+    request: TunnelRequest
+  ) async throws {
+    await acquirePreferenceLock()
+    defer { releasePreferenceLock() }
+
+    manager.isEnabled = true
+    managerStore.applyNetworkExtensionOptions(to: manager, enableOnDemand: true)
+    StartupLog.mark(
+      "tunnel: save preferences provider=\(manager.protocolConfiguration?.value(forKey: "providerBundleIdentifier") as? String ?? "nil") enabled=\(manager.isEnabled) status=\(manager.connection.status.rawValue)"
+    )
+    try await awaitPreferenceResult { completion in
+      manager.saveToPreferences(completionHandler: completion)
+    }
+    guard isCurrent(request) else {
+      return
+    }
+    if !manager.isEnabled {
+      manager.isEnabled = true
+      try await awaitPreferenceResult { completion in
+        manager.saveToPreferences(completionHandler: completion)
+      }
+      guard isCurrent(request) else {
+        return
+      }
+    }
+    try await awaitPreferenceResult { completion in
+      manager.loadFromPreferences(completionHandler: completion)
+    }
+    StartupLog.mark(
+      "tunnel: preferences ready enabled=\(manager.isEnabled) status=\(manager.connection.status.rawValue)"
+    )
   }
 
   private func settleBeforeStart(
@@ -562,9 +594,16 @@ final class TunnelCoordinator {
           to: manager,
           enableOnDemand: status == .connecting || status.tunnelState == .running
         )
-        try await awaitPreferenceResult { completion in
-          manager.saveToPreferences(completionHandler: completion)
+        await acquirePreferenceLock()
+        do {
+          try await awaitPreferenceResult { completion in
+            manager.saveToPreferences(completionHandler: completion)
+          }
+        } catch {
+          releasePreferenceLock()
+          throw error
         }
+        releasePreferenceLock()
         return nil
       } catch {
         log(
@@ -703,13 +742,13 @@ final class TunnelCoordinator {
       // device log shows: the call is made and nothing follows) leaves the
       // request hanging with no diagnostic at all.
       Task {
-        try? await Task.sleep(nanoseconds: 20_000_000_000)
-        StartupLog.mark("tunnel: preferences call timed out after 20s")
+        try? await Task.sleep(nanoseconds: 60_000_000_000)
+        StartupLog.mark("tunnel: preferences call timed out after 60s — an add-VPN / Face ID prompt may be waiting for approval")
         once.finish(
           NSError(
             domain: "FlClash",
             code: -1001,
-            userInfo: [NSLocalizedDescriptionKey: "preferences call timed out after 20s"]
+            userInfo: [NSLocalizedDescriptionKey: "preferences call timed out after 60s"]
           )
         )
       }
