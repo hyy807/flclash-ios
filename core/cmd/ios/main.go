@@ -318,6 +318,7 @@ func governor() {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	warned := false
+	var samples uint64
 	for !governorStopped.Load() {
 		<-ticker.C
 		ceiling := memoryCeiling.Load()
@@ -325,6 +326,10 @@ func governor() {
 			continue
 		}
 		footprint := uint64(C.phys_footprint())
+		samples++
+		if samples == 1 || samples%15 == 0 {
+			logError("memory sample: footprint=%dKiB ceiling=%dKiB", footprint>>10, ceiling>>10)
+		}
 		switch {
 		case footprint > ceiling*85/100:
 			core.ForceGC()

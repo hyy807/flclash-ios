@@ -7,6 +7,7 @@
 
 static void *NECoreCallbackQueueKey(void);
 static dispatch_queue_t NECoreCallbackQueue(void);
+static void NECoreTraceLine(NSString *line);
 
 static void NECoreReleaseObject(void *obj) {
   if (obj != NULL) {
@@ -122,6 +123,12 @@ static os_log_type_t NECoreLogType(const char *level) {
 static void NECoreSystemLog(const char *level, const char *message) {
   if (message == NULL) {
     return;
+  }
+  if (level != NULL &&
+      (strcmp(level, "error") == 0 || strcmp(level, "warning") == 0)) {
+    @autoreleasepool {
+      NECoreTraceLine([NSString stringWithFormat:@"core %s: %s", level, message]);
+    }
   }
   os_log_with_type(
       NECoreLogger(),
