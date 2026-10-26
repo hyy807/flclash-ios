@@ -234,7 +234,16 @@ class RouteTracker extends _$RouteTracker {
   }
 
   void markResumed() {
-    state = state.copyWith(resumes: state.resumes + 1);
+    state = state.copyWith(
+      resumes: state.resumes + 1,
+      // A Flutter UI resume can recreate the probe consumers while the
+      // Network Extension kept running. Force every old probe stamp stale.
+      hostEpoch: state.hostEpoch + 1,
+      synced: false,
+    );
+    if (_ready) {
+      unawaited(_subscribe());
+    }
   }
 
   /// Deferred because both are computed: unwatched, they go stale, and the
