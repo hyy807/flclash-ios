@@ -57,3 +57,38 @@ codesign -d --entitlements :- payload/Payload/FlClash.app/PlugIns/NECore.appex
 
 If the `networkextension` entitlement is missing, the tunnel cannot start no
 matter what the logs say — re-sign with a profile that has it.
+
+## What a real device taught us
+
+A paid certificate whose profile carries
+`com.apple.developer.networking.networkextension = packet-tunnel-provider` is
+**not enough**. Measured on iOS 27 with a validation profile:
+
+* the app's code signature does carry the entitlement
+  (`signed: ne=(packet-tunnel-provider, …)`), and the App Group resolves from the
+  profile;
+* `NETunnelProviderManager.saveToPreferences` is then called for the extension
+  and **never calls back** — no error, no status change, five seconds later
+  nothing. Re-signing with a bundle id equal to the profile's App ID changes
+  nothing.
+
+Cause: a provisioning profile names exactly **one** App ID. The tunnel extension
+is a second bundle with a second App ID, and it has to be signed with a profile
+matching *that* App ID. When a tool signs every embedded bundle with the one
+profile it has, the appex ends up carrying the app's `application-identifier`,
+and NetworkExtension silently refuses the configuration.
+
+So a Network Extension client needs **two** App IDs and two profiles:
+
+```
+com.example.flclash            com.apple.developer.networking.networkextension
+                               com.apple.security.application-groups
+com.example.flclash.NECore     com.apple.developer.networking.networkextension
+                               com.apple.security.application-groups
+```
+
+A single shared certificate ("通用签名" with one App ID) can never satisfy this,
+and a wildcard App ID cannot carry Network Extension at all. The tools that do
+work are the ones that create the App IDs and profiles per bundle themselves —
+Sideloadly / AltStore with a paid account, or an Xcode build with a team — or a
+hand-run `codesign` that supplies the second profile to `PlugIns/NECore.appex`.
