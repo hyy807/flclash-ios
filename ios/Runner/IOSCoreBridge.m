@@ -48,15 +48,13 @@ static void IOSCoreResult(void *invokeInterface, const char *data) {
   if (invokeInterface == NULL) {
     return;
   }
-  @autoreleasepool {
-    IOSCoreResultHandler handler = (__bridge IOSCoreResultHandler)invokeInterface;
-    NSString *result = data == NULL ? nil : [[NSString alloc] initWithUTF8String:data];
-    dispatch_async(dispatch_get_main_queue(), ^{
-      @autoreleasepool {
-        handler(result);
-      }
-    });
-  }
+  IOSCoreResultHandler retainedHandler = [(__bridge IOSCoreResultHandler)invokeInterface copy];
+  NSString *result = data == NULL ? nil : [[NSString alloc] initWithUTF8String:data];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    @autoreleasepool {
+      retainedHandler(result);
+    }
+  });
 }
 
 static os_log_t IOSCoreLogger(void) {

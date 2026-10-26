@@ -59,6 +59,14 @@ final class TunnelManagerStore {
     self.localizedDescription = localizedDescription
   }
 
+  func reloadManager(
+    createIfNeeded: Bool = false
+  ) async throws -> NETunnelProviderManager? {
+    cacheGeneration &+= 1
+    cacheState = .unloaded
+    return try await loadManager(createIfNeeded: createIfNeeded)
+  }
+
   func loadManager(
     createIfNeeded: Bool = true
   ) async throws -> NETunnelProviderManager? {

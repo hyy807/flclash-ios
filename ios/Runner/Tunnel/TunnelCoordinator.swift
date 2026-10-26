@@ -697,7 +697,7 @@ final class TunnelCoordinator {
   private func performStatusRefresh(notifyExternal: Bool) async {
     let generation = requestGeneration
     do {
-      let manager = try await managerStore.loadManager(createIfNeeded: false)
+      let manager = try await managerStore.reloadManager(createIfNeeded: false)
       let status = manager?.connection.status ?? .invalid
       recordObservedTunnelStatus(
         status,
