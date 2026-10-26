@@ -123,7 +123,7 @@ class ProxiesAction extends _$ProxiesAction {
 
   Future<void> updateGroups() async {
     try {
-      ref.read(groupsProvider.notifier).value = await retry(
+      final groups = await retry(
         task: () async {
           final sortType = ref.read(
             proxiesStyleSettingProvider.select((state) => state.sortType),
@@ -147,15 +147,15 @@ class ProxiesAction extends _$ProxiesAction {
               'updateGroups error: $e',
               logLevel: coreFailureLogLevel(e),
             );
-            return [];
+            return <Group>[];
           }
         },
         retryIf: (res) => res.isEmpty,
       );
+      if (groups.isNotEmpty) {
+        ref.read(groupsProvider.notifier).value = groups;
+      }
     } catch (e) {
-      // The Core failure path already runs inside the retry task above; a
-      // throw here only means ref.read hit a disposed container or the
-      // groupsProvider write itself failed.
       commonPrint.log(
         'updateGroups failed: $e',
         logLevel: coreFailureLogLevel(e),
