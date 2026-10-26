@@ -262,9 +262,17 @@ final class TunnelCoordinator {
         continue
       }
 
-      manager = try await prepareTunnelPreferences(manager: manager, request: request)
-      guard isCurrent(request) else {
-        return
+      if managerStore.hasStoredManager && manager.isEnabled {
+        // Already provisioned and enabled: start it directly. Saving first is
+        // what made connecting wait on the daemon; a connect should be instant.
+        StartupLog.mark(
+          "tunnel: configuration already provisioned, starting without saving status=\(manager.connection.status.rawValue)"
+        )
+      } else {
+        manager = try await prepareTunnelPreferences(manager: manager, request: request)
+        guard isCurrent(request) else {
+          return
+        }
       }
 
       let preparedStatus = manager.connection.status

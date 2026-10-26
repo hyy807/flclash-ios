@@ -40,6 +40,11 @@ final class TunnelManagerStore {
   )
   private let maxInvalidationReloadCount = 1
 
+  /// Whether the manager handed out came from the saved configuration rather
+  /// than being created on the fly. A stored, enabled configuration can be
+  /// started directly - no save round-trip, so connecting is immediate.
+  private(set) var hasStoredManager = false
+
   private var cacheGeneration: UInt64 = 0
   private var cacheState = ManagerCacheState.unloaded
   private var nextLoadID: UInt64 = 0
@@ -270,6 +275,7 @@ final class TunnelManagerStore {
       ? makeManager()
       : nil
     let manager = loadedManager ?? createdManager
+    hasStoredManager = loadedManager != nil
     cacheState = .loaded(manager)
 
     if manager == nil {
