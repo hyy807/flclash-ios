@@ -26,6 +26,10 @@ Future<Directory> migrateIOSDataDirectory({
       target.path,
       relative(entity.path, from: supportDirectory.path),
     );
+    final name = basename(entity.path);
+    if (name.startsWith('database.sqlite') || name == 'FlClash.lock') {
+      continue;
+    }
     if (entity is Directory) {
       await Directory(targetPath).create(recursive: true);
     } else if (entity is File && !await File(targetPath).exists()) {
@@ -135,9 +139,21 @@ class AppPath {
     return directory.path;
   }
 
+  /// Files only this process opens with locks stay in the private sandbox.
+  /// iOS kills a suspended app (0xdead10cc) that holds a lock on a file in a
+  /// shared App Group container, and SQLite and FlClash.lock both lock.
+  Future<String> get privateDirPath async {
+    if (!Platform.isIOS) {
+      return homeDirPath;
+    }
+    final directory = await supportDirectory();
+    await directory.create(recursive: true);
+    return directory.path;
+  }
+
   Future<String> get databasePath async {
-    final mHomeDirPath = await homeDirPath;
-    return join(mHomeDirPath, 'database.sqlite');
+    final mPrivateDirPath = await privateDirPath;
+    return join(mPrivateDirPath, 'database.sqlite');
   }
 
   Future<String> get tempFilePath async {
@@ -146,9 +162,10 @@ class AppPath {
   }
 
   Future<String> get lockFilePath async {
-    final homeDirPath = await appPath.homeDirPath;
-    return join(homeDirPath, 'FlClash.lock');
+    final mPrivateDirPath = await privateDirPath;
+    return join(mPrivateDirPath, 'FlClash.lock');
   }
+
 
   Future<String> get configFilePath async {
     final mHomeDirPath = await homeDirPath;

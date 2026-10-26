@@ -89,6 +89,9 @@ jobs:
       - name: Flutter dependencies
         run: flutter pub get
 
+      - name: Verify iOS shared-data migration
+        run: flutter test test/common/ios_data_migration_test.dart
+
       # The setup hook only knows desktop and Android targets; the iOS core is
       # built by the Xcode Run Script phase (tool/ios/build_core.sh) instead.
       - name: Disable desktop core hook for the iOS build
