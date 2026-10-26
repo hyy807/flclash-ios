@@ -621,6 +621,21 @@ final class TunnelCoordinator {
       "\(request.target.description) completed actual=\(actualState.description) generation=\(request.generation)"
     )
 
+    if request.target == .running,
+      actualState == .stopped
+    {
+      StartupLog.mark("tunnel: running request ended stopped; scheduling automatic reconnect")
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        guard self.tunnelRequest == nil,
+          self.publishedTunnelState == .stopped,
+          self.requestGeneration == request.generation
+        else { return }
+        self.submitTunnelRequest(target: .running)
+      }
+    }
+
     Task { @MainActor [weak self] in
       guard let self,
         self.requestGeneration == request.generation,
@@ -727,6 +742,18 @@ final class TunnelCoordinator {
       return
     }
     reportTunnelState(stableState)
+    // A provider failure (reason 11) is not a user stop. Keep the user's
+    // desired running state and submit a fresh start after NetworkExtension
+    // returns to disconnected; otherwise background/network transitions leave
+    // the VPN off until the user opens the app again.
+    if stableState == .stopped,
+      publishedTunnelState == .running,
+      requestGeneration > 0
+    {
+      StartupLog.mark("tunnel: unexpected disconnect while running; scheduling automatic reconnect")
+      submitTunnelRequest(target: .running)
+      return
+    }
     if notifyExternal {
       publishExternalState(stableState)
     } else if publishedTunnelState == nil {
