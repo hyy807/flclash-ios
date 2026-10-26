@@ -213,6 +213,12 @@ final class TunnelCoordinator {
         log(
           "\(request.target.description) failed: \(error.localizedDescription)"
         )
+        {
+          let nsError = error as NSError
+          StartupLog.mark(
+            "tunnel: \(request.target.description) FAILED domain=\(nsError.domain) code=\(nsError.code) \(nsError.localizedDescription) userInfo=\(nsError.userInfo.keys.joined(separator: ","))"
+          )
+        }
         finishTunnelRequest(
           request,
           actualState: stableFailureState(status)
@@ -259,6 +265,9 @@ final class TunnelCoordinator {
       manager.isEnabled = true
       managerStore.applyNetworkExtensionOptions(to: manager, enableOnDemand: true)
       log("start save preferences")
+      StartupLog.mark(
+        "tunnel: save preferences provider=\(manager.protocolConfiguration?.value(forKey: "providerBundleIdentifier") as? String ?? "nil") enabled=\(manager.isEnabled) status=\(manager.connection.status.rawValue)"
+      )
       do {
         try await awaitPreferenceResult { completion in
           manager.saveToPreferences(completionHandler: completion)
@@ -308,8 +317,10 @@ final class TunnelCoordinator {
       }
 
       do {
+        StartupLog.mark("tunnel: calling startVPNTunnel status=\(manager.connection.status.rawValue)")
         try manager.connection.startVPNTunnel()
         log("start requested")
+        StartupLog.mark("tunnel: startVPNTunnel returned status=\(manager.connection.status.rawValue)")
       } catch {
         if finishRunningRequestIfSatisfied(request, manager: manager) {
           return
@@ -608,6 +619,9 @@ final class TunnelCoordinator {
     if previousStatus != status {
       log(
         "status changed \(statusDescription(previousStatus ?? .invalid)) -> \(statusDescription(status)) target=\(tunnelRequest?.target.description ?? "none")"
+      )
+      StartupLog.mark(
+        "tunnel: status \(statusDescription(previousStatus ?? .invalid)) -> \(statusDescription(status))"
       )
     }
 
