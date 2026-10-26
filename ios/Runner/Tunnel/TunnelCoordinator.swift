@@ -669,17 +669,55 @@ final class TunnelCoordinator {
     }
   }
 
+  /// A continuation that may be resumed twice (callback + timeout) without
+  /// trapping the process.
+  private final class OneShotResume: @unchecked Sendable {
+    private let lock = NSLock()
+    private var finished = false
+    private let continuation: CheckedContinuation<Void, Error>
+
+    init(_ continuation: CheckedContinuation<Void, Error>) {
+      self.continuation = continuation
+    }
+
+    func finish(_ error: Error?) {
+      lock.lock()
+      if finished {
+        lock.unlock()
+        return
+      }
+      finished = true
+      lock.unlock()
+      if let error {
+        continuation.resume(throwing: error)
+      } else {
+        continuation.resume()
+      }
+    }
+  }
+
   private func awaitPreferenceResult(
     _ action: (@escaping @Sendable (Error?) -> Void) -> Void
   ) async throws {
     try await withCheckedThrowingContinuation {
       (continuation: CheckedContinuation<Void, Error>) in
+      let once = OneShotResume(continuation)
       action { error in
-        if let error {
-          continuation.resume(throwing: error)
-        } else {
-          continuation.resume()
-        }
+        once.finish(error)
+      }
+      // Without this, a savePreferences that never calls back (which is what the
+      // device log shows: the call is made and nothing follows) leaves the
+      // request hanging with no diagnostic at all.
+      Task {
+        try? await Task.sleep(nanoseconds: 5_000_000_000)
+        StartupLog.mark("tunnel: preferences call timed out after 5s")
+        once.finish(
+          NSError(
+            domain: "FlClash",
+            code: -1001,
+            userInfo: [NSLocalizedDescriptionKey: "preferences call timed out"]
+          )
+        )
       }
     }
   }

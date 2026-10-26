@@ -37,6 +37,41 @@ enum StartupLog {
     append("\(ISO8601DateFormatter().string(from: Date())) [swift] \(phase)\n", to: url)
   }
 
+
+  /// Reads the provisioning profile the signer embedded and records the
+  /// entitlements it grants. This is the only way, from inside the app, to tell
+  /// whether the re-sign actually carried Network Extension and the App Group —
+  /// and it answers "is the certificate the problem" with evidence.
+  static func dumpSignedProfile() {
+    let bundleURL = Bundle.main.bundleURL
+    let profileURL = bundleURL.appendingPathComponent("embedded.mobileprovision")
+    guard let data = try? Data(contentsOf: profileURL) else {
+      mark("profile: NO embedded.mobileprovision (unsigned install?)")
+      return
+    }
+    guard let start = data.range(of: Data("<?xml".utf8)),
+      let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
+      let plist = try? PropertyListSerialization.propertyList(
+        from: data.subdata(in: start.lowerBound..<end.upperBound),
+        options: [],
+        format: nil
+      ) as? [String: Any]
+    else {
+      mark("profile: unparseable")
+      return
+    }
+    let entitlements = (plist["Entitlements"] as? [String: Any]) ?? [:]
+    let appId = entitlements["application-identifier"] as? String ?? "nil"
+    let teamId = entitlements["team-identifier"] as? String ?? "nil"
+    let groups = (entitlements["com.apple.security.application-groups"] as? [String])?.joined(separator: ",") ?? "none"
+    let ne = entitlements["com.apple.developer.networking.networkextension"] as? [String]
+    let expire = (plist["ExpirationDate"] as? Date).map { ISO8601DateFormatter().string(from: $0) } ?? "nil"
+    mark("profile: appId=\(appId) team=\(teamId) expires=\(expire)")
+    mark("profile: networkextension=\(ne?.joined(separator: ",") ?? "ABSENT")")
+    mark("profile: appGroups=\(groups)")
+    mark("profile: allEntitlements=\(entitlements.keys.sorted().joined(separator: ","))")
+  }
+
   static func append(_ line: String, to url: URL) {
     guard let data = line.data(using: .utf8) else {
       return
@@ -95,6 +130,7 @@ enum StartupLog {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     StartupLog.mark("didFinishLaunching")
+    StartupLog.dumpSignedProfile()
     StartupLog.armQuitProbe()
     atexit {
       StartupLog.mark("atexit fired")
