@@ -262,7 +262,7 @@ final class TunnelCoordinator {
         continue
       }
 
-      try await prepareTunnelPreferences(manager: manager, request: request)
+      manager = try await prepareTunnelPreferences(manager: manager, request: request)
       guard isCurrent(request) else {
         return
       }
@@ -340,10 +340,13 @@ final class TunnelCoordinator {
     next.resume()
   }
 
+  /// Saves and reloads the tunnel configuration, then hands back the manager to
+  /// start from. A save that never calls back is not fatal: the configuration is
+  /// often stored anyway, so the list is re-read and whatever is there is used.
   private func prepareTunnelPreferences(
     manager: NETunnelProviderManager,
     request: TunnelRequest
-  ) async throws {
+  ) async throws -> NETunnelProviderManager {
     await acquirePreferenceLock()
     defer { releasePreferenceLock() }
 
@@ -352,19 +355,25 @@ final class TunnelCoordinator {
     StartupLog.mark(
       "tunnel: save preferences provider=\(manager.protocolConfiguration?.value(forKey: "providerBundleIdentifier") as? String ?? "nil") enabled=\(manager.isEnabled) status=\(manager.connection.status.rawValue)"
     )
-    try await awaitPreferenceResult { completion in
-      manager.saveToPreferences(completionHandler: completion)
+    do {
+      try await awaitPreferenceResult { completion in
+        manager.saveToPreferences(completionHandler: completion)
+      }
+    } catch {
+      StartupLog.mark("tunnel: save did not answer (\(error.localizedDescription)); checking what got stored")
+      if let stored = await storedManager() {
+        StartupLog.mark("tunnel: stored configuration enabled=\(stored.isEnabled) status=\(stored.connection.status.rawValue)")
+        return stored
+      }
+      throw error
     }
     guard isCurrent(request) else {
-      return
+      return manager
     }
     if !manager.isEnabled {
       manager.isEnabled = true
       try await awaitPreferenceResult { completion in
         manager.saveToPreferences(completionHandler: completion)
-      }
-      guard isCurrent(request) else {
-        return
       }
     }
     try await awaitPreferenceResult { completion in
@@ -373,6 +382,22 @@ final class TunnelCoordinator {
     StartupLog.mark(
       "tunnel: preferences ready enabled=\(manager.isEnabled) status=\(manager.connection.status.rawValue)"
     )
+    return manager
+  }
+
+  /// Reads the stored configurations once, without keeping them cached.
+  private func storedManager() async -> NETunnelProviderManager? {
+    await withCheckedContinuation {
+      (continuation: CheckedContinuation<NETunnelProviderManager?, Never>) in
+      NETunnelProviderManager.loadAllFromPreferences { managers, error in
+        DispatchQueue.main.async {
+          if let error {
+            StartupLog.mark("tunnel: loadAll after failure error=\(error.localizedDescription)")
+          }
+          continuation.resume(returning: managers?.first)
+        }
+      }
+    }
   }
 
   private func settleBeforeStart(
