@@ -268,6 +268,27 @@ final class TunnelCoordinator {
         StartupLog.mark(
           "tunnel: configuration already provisioned, starting without saving status=\(manager.connection.status.rawValue)"
         )
+      } else if managerStore.hasStoredManager {
+        StartupLog.mark(
+          "tunnel: stored configuration is disabled (isEnabled=false) — open Settings > General > VPN & Device Management > VPN and switch FlClash on once"
+        )
+        manager = try await prepareTunnelPreferences(manager: manager, request: request)
+        guard isCurrent(request) else {
+          return
+        }
+        if !manager.isEnabled {
+          StartupLog.mark(
+            "tunnel: the system still reports the configuration as disabled; refusing to start rather than hanging"
+          )
+          throw NSError(
+            domain: "FlClash",
+            code: -1003,
+            userInfo: [
+              NSLocalizedDescriptionKey:
+                "VPN configuration is disabled: enable FlClash once in Settings > VPN"
+            ]
+          )
+        }
       } else {
         manager = try await prepareTunnelPreferences(manager: manager, request: request)
         guard isCurrent(request) else {
