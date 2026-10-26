@@ -709,8 +709,10 @@ final class TunnelCoordinator {
       // device log shows: the call is made and nothing follows) leaves the
       // request hanging with no diagnostic at all.
       Task {
-        try? await Task.sleep(nanoseconds: 5_000_000_000)
-        StartupLog.mark("tunnel: preferences call timed out after 5s")
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        StartupLog.mark(
+          "tunnel: preferences call timed out after 3s — NetworkExtension accepts the call and never answers when the tunnel extension is not signed with its own App ID"
+        )
         once.finish(
           NSError(
             domain: "FlClash",
