@@ -26,11 +26,7 @@ class _DelayTestJob {
 class ProxiesAction extends _$ProxiesAction {
   CoreController get _core => ref.read(coreHandlerProvider);
 
-  // Each probe allocates transport/TLS state inside the 50MB packet tunnel.
-  // Desktop's 32-way batch exceeds the extension budget with large profiles.
-  final TaskPool _delayTestPool = TaskPool(
-    system.isIOS ? 2 : maxConcurrentDelayTests,
-  );
+  final TaskPool _delayTestPool = TaskPool(maxConcurrentDelayTests);
 
   final List<_DelayTestJob> _delayTestJobs = [];
 

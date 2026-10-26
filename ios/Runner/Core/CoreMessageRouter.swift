@@ -14,6 +14,7 @@ private enum AppCoreMethod: String {
   case deleteManagedPath
   case updateGeoData
   case getCountryCode
+  case asyncTestDelay
 }
 
 private enum ConfigurationCoreMethod: String {
@@ -80,7 +81,12 @@ final class CoreMessageRouter {
       }
 
       let routedResult: (response: String, route: CoreRoute)
-      if let method,
+      if method == AppCoreMethod.asyncTestDelay.rawValue {
+        routedResult = (
+          try await sendCoreMessage(data, route: .app),
+          .app
+        )
+      } else if let method,
         let configurationMethod = ConfigurationCoreMethod(rawValue: method)
       {
         let response = try await sendConfigurationMessage(
