@@ -144,12 +144,30 @@ class SetupAction extends _$SetupAction {
     _startTime = await service?.getRunTime();
   }
 
+  Future<void> restoreIOSRunningState() async {
+    if (!system.isIOS) return;
+    final started = await service?.getRunTime();
+    _startTime = started;
+    _setLocalRunning(started != null);
+    ref.read(runningVpnOptionsProvider.notifier).value = started == null
+        ? null
+        : await ref.read(vpnOptionsProvider.future);
+  }
+
   Future<void> initStatus() async {
     if (!globalState.needInitStatus) {
       return;
     }
-    if (system.isAndroid) {
+    if (system.isAndroid || system.isIOS) {
       await _updateStartTime();
+    }
+    if (system.isIOS && _isRunning) {
+      // Adopt the live extension; do not reapply a profile just to restore UI.
+      globalState.needInitStatus = false;
+      _setLocalRunning(true);
+      ref.read(runningVpnOptionsProvider.notifier).value =
+          await ref.read(vpnOptionsProvider.future);
+      return;
     }
     final shouldRun = _isRunning || ref.read(appSettingProvider).autoRun;
     if (shouldRun) {

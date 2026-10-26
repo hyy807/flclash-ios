@@ -88,6 +88,9 @@ class _AppStateManagerState extends ConsumerState<AppStateManager>
   Future<void> didChangeAppLifecycleState(AppLifecycleState state) async {
     _updateVisible(state);
     if (state == AppLifecycleState.resumed) {
+      if (system.isIOS && ref.read(initProvider)) {
+        await ref.read(setupActionProvider.notifier).restoreIOSRunningState();
+      }
       unawaited(ref.read(locationPermissionsProvider.notifier).refresh());
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) {
