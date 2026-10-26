@@ -19,10 +19,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     completionHandler: @escaping (Error?) -> Void
   ) {
     logger.info("startTunnel begin")
+    sharedStateStore.trace("startTunnel begin options=\(options?.keys.joined(separator: ",") ?? "nil")")
     sharedStateStore.clearRunTime()
     reloadWidgets()
     guard let snapshot = sharedStateStore.loadVPNOptionsSnapshot() else {
       logger.error("startTunnel failed: missing vpn options")
+      sharedStateStore.trace("startTunnel failed: missing vpn options snapshot")
       completionHandler(PacketTunnelProviderError.missingVPNOptions)
       return
     }
@@ -31,6 +33,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
       "startTunnel options stack=\(vpnOptions.stack, privacy: .public) ipv6=\(vpnOptions.ipv6, privacy: .public) captureDns=\(vpnOptions.captureDns, privacy: .public) systemProxy=\(vpnOptions.systemProxy, privacy: .public)"
     )
 
+    sharedStateStore.trace("applying network settings")
     setTunnelNetworkSettings(
       networkConfiguration.makeSettings(for: vpnOptions)
     ) { error in
@@ -38,10 +41,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         self.logger.error(
           "setTunnelNetworkSettings failed: \(error.localizedDescription, privacy: .public)"
         )
+        self.sharedStateStore.trace("setTunnelNetworkSettings failed: \(error.localizedDescription)")
         completionHandler(error)
         return
       }
       self.logger.info("setTunnelNetworkSettings completed")
+      self.sharedStateStore.trace("setTunnelNetworkSettings completed")
       guard
         let tunnelFileDescriptor =
           self.networkConfiguration.tunnelFileDescriptor()
@@ -49,6 +54,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         self.logger.error(
           "startTunnel failed: tunnel file descriptor missing"
         )
+        self.sharedStateStore.trace("startTunnel failed: no tunnel file descriptor")
         completionHandler(
           PacketTunnelProviderError.couldNotDetermineFileDescriptor
         )
@@ -120,6 +126,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     completionHandler: @escaping () -> Void
   ) {
     logger.info("stopTunnel reason=\(reason.rawValue, privacy: .public)")
+    sharedStateStore.trace("stopTunnel reason=\(reason.rawValue)")
     sharedStateStore.clearRunTime()
     reloadWidgets()
     eventQueue.stop()

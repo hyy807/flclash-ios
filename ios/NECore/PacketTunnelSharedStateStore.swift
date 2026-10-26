@@ -62,6 +62,25 @@ final class PacketTunnelSharedStateStore {
     return "{\"home-dir\":\"\(homeDirectory)\",\"version\":0}"
   }
 
+
+  /// Appends a line to the extension's own trace file in the shared container.
+  /// The app copies it into its Documents on the next launch, because the
+  /// extension has no readable log of its own and a tunnel that dies instantly
+  /// leaves nothing behind.
+  func trace(_ line: String) {
+    guard let directory = appGroupDirectory() else { return }
+    let url = directory.appendingPathComponent("extension-start.log")
+    let stamp = ISO8601DateFormatter().string(from: Date())
+    guard let data = "\(stamp) [ext] \(line)\n".data(using: .utf8) else { return }
+    if let handle = try? FileHandle(forWritingTo: url) {
+      handle.seekToEndOfFile()
+      handle.write(data)
+      try? handle.close()
+    } else {
+      try? data.write(to: url, options: .atomic)
+    }
+  }
+
   func appGroupDirectory() -> URL? {
     FileManager.default.containerURL(
       forSecurityApplicationGroupIdentifier:

@@ -39,6 +39,34 @@ enum StartupLog {
   }
 
 
+
+  /// Pulls the packet tunnel's own trace out of the shared container into this
+  /// log, because an extension that dies on launch leaves nothing readable.
+  static func importExtensionTrace() {
+    let group = AppGroupProfileResolver.resolve(
+      bundleURL: Bundle.main.bundleURL,
+      fallbackBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.follow.clash"
+    )
+    guard
+      let directory = FileManager.default.containerURL(
+        forSecurityApplicationGroupIdentifier: group
+      )
+    else {
+      mark("ext trace: no app group container (\(group))")
+      return
+    }
+    let source = directory.appendingPathComponent("extension-start.log")
+    guard let text = try? String(contentsOf: source, encoding: .utf8) else {
+      mark("ext trace: extension never wrote a trace file")
+      return
+    }
+    mark("ext trace from \(group):")
+    for line in text.split(separator: "\n").suffix(80) {
+      mark("  \(line)")
+    }
+    try? FileManager.default.removeItem(at: source)
+  }
+
   /// Reads the provisioning profile the signer embedded and records the
   /// entitlements it grants. This is the only way, from inside the app, to tell
   /// whether the re-sign actually carried Network Extension and the App Group —
@@ -160,6 +188,7 @@ enum StartupLog {
     StartupLog.dumpSignedProfile()
     StartupLog.mark("signed: \(IOSCoreBridge.effectiveEntitlements())")
     StartupLog.probeNetworkExtension()
+    StartupLog.importExtensionTrace()
     StartupLog.armQuitProbe()
     atexit {
       StartupLog.mark("atexit fired")
