@@ -80,7 +80,11 @@ class _AndroidContainerState extends ConsumerState<AndroidManager>
 
   @override
   void onServiceStopped() {
-    unawaited(ref.read(setupActionProvider.notifier).setRunning(false));
+    if (system.isIOS) {
+      ref.read(setupActionProvider.notifier).adoptNativeStopped();
+    } else {
+      unawaited(ref.read(setupActionProvider.notifier).setRunning(false));
+    }
     super.onServiceStopped();
   }
 

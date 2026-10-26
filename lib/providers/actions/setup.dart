@@ -177,6 +177,13 @@ class SetupAction extends _$SetupAction {
     }
   }
 
+  void adoptNativeStopped() {
+    if (!system.isIOS) return;
+    _latestRunRequest = null;
+    _setLocalRunning(false);
+    ref.read(runningVpnOptionsProvider.notifier).value = null;
+  }
+
   Future<bool> setRunning(bool running, {bool initialize = false}) {
     if (running && !initialize && !ref.read(initProvider)) {
       return Future.value(true);
