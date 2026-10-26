@@ -26,6 +26,8 @@ class _DelayTestJob {
 class ProxiesAction extends _$ProxiesAction {
   CoreController get _core => ref.read(coreHandlerProvider);
 
+  final Map<String, int> _generationByKey = {};
+  int _resumeGeneration = 0;
   final TaskPool _delayTestPool = TaskPool(maxConcurrentDelayTests);
 
   final List<_DelayTestJob> _delayTestJobs = [];
@@ -84,6 +86,14 @@ class ProxiesAction extends _$ProxiesAction {
           .read(pendingDelayTestsProvider.notifier)
           .apply(started: started, finished: finished);
     }
+  }
+
+  void invalidateForResume() {
+    _resumeGeneration++;
+    for (final job in _delayTestJobs) {
+      job.cancelled = true;
+    }
+    _flushDelayResults();
   }
 
   void updateGroupsDebounce([Duration? duration]) {
@@ -364,6 +374,7 @@ class ProxiesAction extends _$ProxiesAction {
   }
 
   Future<void> _runDelayTests(List<_DelayTestBatch> batches) async {
+    final generation = _resumeGeneration;
     final targets = _resolveDelayTestTargets(batches);
     if (targets.isEmpty) {
       return;
@@ -379,7 +390,9 @@ class ProxiesAction extends _$ProxiesAction {
     try {
       await Future.wait(
         targets.map(
-          (target) => _delayTestPool.run(() => _runDelayTest(job, target)),
+          (target) => _delayTestPool.run(
+            () => _runDelayTest(job, target, generation),
+          ),
         ),
       );
     } finally {
@@ -396,8 +409,12 @@ class ProxiesAction extends _$ProxiesAction {
     }
   }
 
-  Future<void> _runDelayTest(_DelayTestJob job, _DelayTestTarget target) async {
-    if (job.cancelled) {
+  Future<void> _runDelayTest(
+    _DelayTestJob job,
+    _DelayTestTarget target,
+    int generation,
+  ) async {
+    if (job.cancelled || generation != _resumeGeneration) {
       return;
     }
     if (!job.startedOnDispatch.contains(target.key)) {
@@ -406,7 +423,9 @@ class ProxiesAction extends _$ProxiesAction {
     }
     try {
       final delay = await _core.getDelay(target.testUrl, target.proxyName);
-      if (delay != null && !job.cancelled) {
+      if (delay != null &&
+          !job.cancelled &&
+          generation == _resumeGeneration) {
         setDelay(delay);
       }
     } catch (error) {

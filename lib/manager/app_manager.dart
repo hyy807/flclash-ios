@@ -89,6 +89,7 @@ class _AppStateManagerState extends ConsumerState<AppStateManager>
     _updateVisible(state);
     if (state == AppLifecycleState.resumed) {
       if (system.isIOS && ref.read(initProvider)) {
+        ref.read(proxiesActionProvider.notifier).invalidateForResume();
         await ref.read(setupActionProvider.notifier).restoreIOSRunningState();
       }
       unawaited(ref.read(locationPermissionsProvider.notifier).refresh());

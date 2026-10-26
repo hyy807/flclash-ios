@@ -24,6 +24,12 @@ class LocationPermissions extends _$LocationPermissions {
   /// Only a request can tell a permanent denial apart, so a check leaves that
   /// answer in place until it sees the grant.
   Future<void> refresh() async {
+    if (system.isIOS) {
+      // iOS has no wifi_ssid implementation in this plugin. On-demand SSID
+      // exclusion is managed by NetworkExtension, so do not call the missing
+      // channel on every foreground resume.
+      return;
+    }
     if (ref.read(safeModeProvider)) {
       return;
     }
