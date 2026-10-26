@@ -123,6 +123,7 @@ class Service {
   }
 
   Future<bool> stop() async {
+    StartupTrace.mark('vpn: Dart stop requested', StackTrace.current);
     _startRequested = false;
     return await methodChannel.invokeMethod<bool>('stop', ++_commandRevision) ??
         false;

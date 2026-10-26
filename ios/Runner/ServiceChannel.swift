@@ -195,6 +195,7 @@ final class ServiceChannel {
       result(true)
     case "stop":
       commandRevision.value = call.arguments as? Int ?? commandRevision.value
+      StartupLog.mark("vpn: native stop revision=\(commandRevision.value)")
       tunnelController.stop()
       result(true)
     case "init":
