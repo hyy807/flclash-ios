@@ -162,17 +162,23 @@ func invokeMethod(callback unsafe.Pointer, paramsChar *C.char) {
 func quickSetup(callback unsafe.Pointer, initParamsChar *C.char, setupParamsChar *C.char) {
 	initParams := takeCString(initParamsChar)
 	setupParams := takeCString(setupParamsChar)
-	go func() {
-		defer releaseObject(callback)
-		defer func() {
-			if r := recover(); r != nil {
-				invokeResult(callback, fmt.Sprintf("internal panic: %v", r))
-			}
-		}()
-		core.QuickSetup(initParams, setupParams, func(message string) {
+	// QuickSetup schedules its own goroutine and returns immediately. The
+	// retained Objective-C block belongs to its completion, not this frame.
+	var once sync.Once
+	finish := func(message string) {
+		once.Do(func() {
+			defer releaseObject(callback)
 			invokeResult(callback, message)
 		})
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			finish(fmt.Sprintf("internal panic: %v", r))
+		}
 	}()
+	core.QuickSetup(initParams, setupParams, func(message string) {
+		finish(message)
+	})
 }
 
 // startTunOptions mirrors the JSON the Swift tunnel configuration builds. Only
