@@ -268,72 +268,34 @@ final class TunnelCoordinator {
       StartupLog.mark(
         "tunnel: save preferences provider=\(manager.protocolConfiguration?.value(forKey: "providerBundleIdentifier") as? String ?? "nil") enabled=\(manager.isEnabled) status=\(manager.connection.status.rawValue)"
       )
-      // The save completion handler is not delivered on this device: the
-      // configuration is written (the connection flips to disconnected) but the
-      // callback never arrives, so waiting for it is exactly what stopped the
-      // VPN from ever starting. Save without waiting, then confirm the write by
-      // re-reading the list, which does answer.
-      manager.saveToPreferences { error in
-        if let error {
-          StartupLog.mark("tunnel: save completion error=\(error.localizedDescription)")
-        } else {
-          StartupLog.mark("tunnel: save completion ok")
-        }
-      }
-
-      // The reloaded configuration is what actually matters, and on this device
-      // it comes back with isEnabled=false: iOS keeps a configuration disabled
-      // until the add-VPN / Face ID confirmation completes. So re-enable it and
-      // wait for the flag to flip instead of failing straight away.
-      var readyManager: NETunnelProviderManager?
-      for attempt in 0..<130 {
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        guard isCurrent(request) else {
-          return
-        }
-        guard let candidate = await managerStore.reloadManagedManager() else {
-          if attempt % 4 == 0 {
-            StartupLog.mark("tunnel: no saved configuration yet attempt=\(attempt)")
-          }
-          continue
-        }
-        if candidate.isEnabled {
-          managerStore.adopt(candidate)
-          readyManager = candidate
-          StartupLog.mark("tunnel: configuration enabled after \(attempt * 500)ms")
-          break
-        }
-        if attempt % 20 == 0 {
-          StartupLog.mark(
-            "tunnel: waiting for the configuration to be enabled attempt=\(attempt) status=\(candidate.connection.status.rawValue) — approve the VPN prompt / Face ID if it is on screen"
-          )
-          managerStore.adopt(candidate)
-          candidate.isEnabled = true
-          managerStore.applyNetworkExtensionOptions(to: candidate, enableOnDemand: false)
-          candidate.saveToPreferences { error in
-            StartupLog.mark("tunnel: enable save error=\(error?.localizedDescription ?? "none")")
-          }
-        }
-      }
-      guard let activeManager = readyManager else {
-        StartupLog.mark("tunnel: configuration stayed disabled for 65s")
-        throw NSError(
-          domain: "FlClash",
-          code: -1002,
-          userInfo: [
-            NSLocalizedDescriptionKey:
-              "tunnel configuration stayed disabled: iOS needs the add-VPN prompt / Face ID confirmation"
-          ]
-        )
+      // The completion handler does arrive on this device, it just takes a few
+      // seconds (observed 2-4s), so give it room instead of timing out early.
+      // Preference operations are serialised by the daemon: never start one
+      // while another is still in flight, or both hang forever.
+      try await awaitPreferenceResult { completion in
+        manager.saveToPreferences(completionHandler: completion)
       }
       guard isCurrent(request) else {
         return
       }
-      manager = activeManager
-      if manager.connection.status.tunnelState == .running {
-        finishTunnelRequest(request, actualState: .running)
+      if !manager.isEnabled {
+        manager.isEnabled = true
+        try await awaitPreferenceResult { completion in
+          manager.saveToPreferences(completionHandler: completion)
+        }
+        guard isCurrent(request) else {
+          return
+        }
+      }
+      try await awaitPreferenceResult { completion in
+        manager.loadFromPreferences(completionHandler: completion)
+      }
+      guard isCurrent(request) else {
         return
       }
+      StartupLog.mark(
+        "tunnel: preferences ready enabled=\(manager.isEnabled) status=\(manager.connection.status.rawValue)"
+      )
 
       let preparedStatus = manager.connection.status
       recordObservedTunnelStatus(preparedStatus, notifyExternal: false)
@@ -741,15 +703,13 @@ final class TunnelCoordinator {
       // device log shows: the call is made and nothing follows) leaves the
       // request hanging with no diagnostic at all.
       Task {
-        try? await Task.sleep(nanoseconds: 3_000_000_000)
-        StartupLog.mark(
-          "tunnel: preferences call timed out after 3s — NetworkExtension accepts the call and never answers when the tunnel extension is not signed with its own App ID"
-        )
+        try? await Task.sleep(nanoseconds: 20_000_000_000)
+        StartupLog.mark("tunnel: preferences call timed out after 20s")
         once.finish(
           NSError(
             domain: "FlClash",
             code: -1001,
-            userInfo: [NSLocalizedDescriptionKey: "preferences call timed out"]
+            userInfo: [NSLocalizedDescriptionKey: "preferences call timed out after 20s"]
           )
         )
       }
