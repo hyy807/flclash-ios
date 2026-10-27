@@ -204,7 +204,7 @@ Future<_Answer> _query(
   var phase = IpQualityFailurePhase.request;
   int? httpStatus;
   try {
-    cancelToken.throwIfCancellationRequested();
+    if (cancelToken.isCancelled) throw cancelToken.cancelError!;
     final url = _urlOf(source, ip);
     final pending = fetch == null
         ? dio.get<String>(
@@ -217,7 +217,7 @@ Future<_Answer> _query(
           )
         : _fetchWithCore(fetch, url, timeout);
     final response = await pending.timeout(timeout);
-    cancelToken.throwIfCancellationRequested();
+    if (cancelToken.isCancelled) throw cancelToken.cancelError!;
     phase = IpQualityFailurePhase.response;
     httpStatus = response.statusCode;
     if (httpStatus == HttpStatus.tooManyRequests) {
