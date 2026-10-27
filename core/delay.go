@@ -69,6 +69,13 @@ func reportMissingDelayTestProxy(name string) {
 	logError("delay test: %q is not part of the applied config", name)
 }
 
+func handleAvailableTestDelay(params *TestDelayParams) (*Delay, error) {
+	if lookupProxy(params.ProxyName) == nil {
+		return nil, &MethodError{Code: "measurement_core_unavailable", Message: "proxy is not part of the measurement configuration"}
+	}
+	return handleTestDelay(params), nil
+}
+
 // A nil answer means the test never got a slot, which says nothing about the proxy.
 func handleTestDelay(params *TestDelayParams) *Delay {
 	url := params.TestUrl

@@ -202,7 +202,7 @@ var methodHandlers = map[CoreMethod]methodHandler{
 	decodeShareLinksMethod:         withArguments(handleDecodeShareLinks),
 	getProxiesMethod:               withoutArguments(handleGetProxies),
 	changeProxyMethod:              withArguments(handleChangeProxy),
-	asyncTestDelayMethod:           withArguments(handleTestDelay),
+	asyncTestDelayMethod:           withFallible(handleAvailableTestDelay),
 	watchRouteMethod:               watchRouteHandler,
 	probeMethod:                    withArguments(handleProbe),
 	outboundIpMethod:               withArguments(handleOutboundIp),

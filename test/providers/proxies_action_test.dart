@@ -662,6 +662,28 @@ void main() {
       expect(container.read(pendingDelayTestsProvider), isEmpty);
     });
 
+    test('stops without timeout values when measurement config is unavailable', () async {
+      var calls = 0;
+      when(() => core.asyncTestDelay(_testUrl, any())).thenAnswer((_) async {
+        calls++;
+        throw const CoreMethodException(
+          code: 'measurement_core_unavailable',
+          message: 'running measurement configuration is unavailable',
+        );
+      });
+      final container = _delayContainer(buildContainer);
+      final proxies = List.generate(
+        maxConcurrentDelayTests * 3,
+        (index) => Proxy(name: 'HK-$index', type: 'ss'),
+      );
+
+      await actionOf(container).delayTest(proxies);
+
+      expect(calls, lessThanOrEqualTo(maxConcurrentDelayTests));
+      expect(container.read(delayDataSourceProvider), isEmpty);
+      expect(container.read(pendingDelayTestsProvider), isEmpty);
+    });
+
     test('a proxy that answers nothing leaves the rest of the run', () async {
       var calls = 0;
       when(() => core.asyncTestDelay(_testUrl, any())).thenAnswer((

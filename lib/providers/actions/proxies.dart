@@ -429,7 +429,9 @@ class ProxiesAction extends _$ProxiesAction {
         setDelay(delay);
       }
     } catch (error) {
-      if (error is CoreMethodException && error.isCoreUnavailable) {
+      if (error is CoreMethodException &&
+          (error.isCoreUnavailable ||
+              error.code == 'measurement_core_unavailable')) {
         job.cancelled = true;
       }
       commonPrint.log(

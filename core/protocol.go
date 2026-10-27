@@ -86,8 +86,9 @@ type Message struct {
 }
 
 type InitParams struct {
-	HomeDir string `json:"home-dir"`
-	Version int    `json:"version"`
+	CachePath string `json:"cache-path,omitempty"`
+	HomeDir   string `json:"home-dir"`
+	Version   int    `json:"version"`
 }
 
 type DecryptConfigParams struct {

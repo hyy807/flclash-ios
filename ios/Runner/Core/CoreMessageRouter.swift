@@ -34,6 +34,13 @@ private struct CoreRoutingError: LocalizedError {
 @MainActor
 final class CoreMessageRouter {
   private let tunnelController: TunnelController
+  private var delayPreparation: Task<Void, Error>?
+  private var configurationRevision = 0
+  private var preparedDelayRevision: Int?
+  private var configurationTransactionHeld = false
+  private var configurationWaiters: [CheckedContinuation<Void, Never>] = []
+  private var activeDelayMeasurements = 0
+  private var delayDrainWaiter: CheckedContinuation<Void, Never>?
   private var currentRoute = CoreRoute.app
   private lazy var notificationCoordinator = CoreNotificationCoordinator(
     sendMessage: { [weak self] data, route in
@@ -56,12 +63,18 @@ final class CoreMessageRouter {
   }
 
   func updateTunnelState(_ state: TunnelTarget) {
-    currentRoute = state == .running ? .networkExtension : .app
+    let route: CoreRoute = state == .running ? .networkExtension : .app
+    if route != currentRoute { configurationRevision += 1 }
+    currentRoute = route
     notificationCoordinator.setDesiredRoute(currentRoute)
   }
 
   func invoke(_ data: Data) async -> String {
     let method = methodCallName(data)
+    if method == "changeProxy" || method == AppCoreMethod.initClash.rawValue {
+      configurationRevision += 1
+      preparedDelayRevision = nil
+    }
     let action = notificationCoordinator.action(for: data)
     await notificationCoordinator.prepare(for: action)
     defer {
@@ -82,10 +95,23 @@ final class CoreMessageRouter {
 
       let routedResult: (response: String, route: CoreRoute)
       if method == AppCoreMethod.asyncTestDelay.rawValue {
-        routedResult = (
-          try await sendCoreMessage(data, route: .app),
-          .app
-        )
+        let revision = configurationRevision
+        if networkExtensionActive {
+          try await prepareAppDelayCore()
+        }
+        await acquireConfigurationGate()
+        guard revision == configurationRevision else {
+          releaseConfigurationTransaction()
+          throw CoreRoutingError(code: "measurement_core_unavailable", message: "measurement configuration changed")
+        }
+        activeDelayMeasurements += 1
+        releaseConfigurationTransaction()
+        defer { finishDelayMeasurement() }
+        let response = try await sendCoreMessage(data, route: .app)
+        guard revision == configurationRevision else {
+          throw CoreRoutingError(code: "measurement_core_unavailable", message: "measurement configuration changed during probe")
+        }
+        routedResult = (response, .app)
       } else if let method,
         let configurationMethod = ConfigurationCoreMethod(rawValue: method)
       {
@@ -139,6 +165,10 @@ final class CoreMessageRouter {
   }
 
   func shutdownAppCore() async -> Bool {
+    configurationRevision += 1
+    preparedDelayRevision = nil
+    await acquireConfigurationTransaction()
+    defer { releaseConfigurationTransaction() }
     let methodCall = #"{"method":"shutdown","arguments":null}"#
     return await withCheckedContinuation { continuation in
       IOSCoreBridge.invokeMethod(methodCall) { [weak self] response in
@@ -156,6 +186,82 @@ final class CoreMessageRouter {
         continuation.resume(returning: success)
       }
     }
+  }
+
+  private func acquireConfigurationGate() async {
+    if configurationTransactionHeld {
+      await withCheckedContinuation { configurationWaiters.append($0) }
+    } else {
+      configurationTransactionHeld = true
+    }
+  }
+
+  private func acquireConfigurationTransaction() async {
+    await acquireConfigurationGate()
+    if activeDelayMeasurements != 0 {
+      await withCheckedContinuation { delayDrainWaiter = $0 }
+    }
+  }
+
+  private func releaseConfigurationTransaction() {
+    if configurationWaiters.isEmpty {
+      configurationTransactionHeld = false
+    } else {
+      configurationWaiters.removeFirst().resume()
+    }
+  }
+
+  private func finishDelayMeasurement() {
+    activeDelayMeasurements -= 1
+    if activeDelayMeasurements == 0 {
+      delayDrainWaiter?.resume()
+      delayDrainWaiter = nil
+    }
+  }
+
+  private func prepareAppDelayCore() async throws {
+    if preparedDelayRevision == configurationRevision { return }
+    if let preparation = delayPreparation {
+      try await preparation.value
+      return
+    }
+    let revision = configurationRevision
+    let task = Task { try await self.loadAppDelayCore(revision: revision) }
+    delayPreparation = task
+    defer { delayPreparation = nil }
+    try await task.value
+  }
+
+  private func loadAppDelayCore(revision: Int) async throws {
+    await acquireConfigurationTransaction()
+    defer { releaseConfigurationTransaction() }
+    guard revision == configurationRevision else {
+      throw CoreRoutingError(code: "measurement_core_unavailable", message: "measurement configuration changed before preparation")
+    }
+    let snapshot = try await sendCoreMessage(
+      Data(#"{"method":"getDelayTestConfiguration","arguments":null}"#.utf8),
+      route: .networkExtension
+    )
+    guard let bytes = snapshot.data(using: .utf8),
+      let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+      methodResponseSucceeded(object),
+      let arguments = object["result"] as? [String: Any],
+      let digest = arguments["digest"] as? String,
+      !digest.isEmpty,
+      revision == configurationRevision,
+      currentRoute == .networkExtension
+    else {
+      throw CoreRoutingError(code: "measurement_core_unavailable", message: "running measurement configuration is unavailable")
+    }
+    let call = try JSONSerialization.data(withJSONObject: ["method": "prepareDelayTest", "arguments": arguments])
+    let response = try await sendCoreMessage(call, route: .app)
+    guard methodResponseHasEmptyStringResult(response),
+      revision == configurationRevision,
+      currentRoute == .networkExtension
+    else {
+      throw CoreRoutingError(code: "measurement_core_unavailable", message: "App measurement core could not prepare the running configuration")
+    }
+    preparedDelayRevision = revision
   }
 
   private func sendRoutedCoreMessage(
@@ -234,6 +340,10 @@ final class CoreMessageRouter {
     method: ConfigurationCoreMethod,
     networkExtensionActive: Bool
   ) async throws -> String {
+    configurationRevision += 1
+    preparedDelayRevision = nil
+    await acquireConfigurationTransaction()
+    defer { releaseConfigurationTransaction() }
     let appData: Data
     if networkExtensionActive && method == .updateConfig {
       appData = try replacingArgument(
@@ -272,7 +382,14 @@ final class CoreMessageRouter {
   ) async throws -> String {
     switch route {
     case .app:
-      guard let methodCall = String(data: data, encoding: .utf8) else {
+      var appData = data
+      if methodCallName(data) == AppCoreMethod.initClash.rawValue {
+        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+          throw CoreRoutingError(code: "measurement_core_unavailable", message: "private App cache directory is unavailable")
+        }
+        appData = try replacingArgument(in: data, key: "cache-path", with: support.appendingPathComponent("delay-core/cache.db").path)
+      }
+      guard let methodCall = String(data: appData, encoding: .utf8) else {
         throw CoreRoutingError(
           code: "invalid_method_call",
           message: "invalid method call"
