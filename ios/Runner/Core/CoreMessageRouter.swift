@@ -25,6 +25,7 @@ private enum ConfigurationCoreMethod: String {
 private struct CoreRoutingError: LocalizedError {
   let code: String
   let message: String
+  var details: Any? = nil
 
   var errorDescription: String? {
     message
@@ -147,7 +148,8 @@ final class CoreMessageRouter {
       return methodErrorResponse(
         data: data,
         code: error.code,
-        message: error.message
+        message: error.message,
+        details: error.details
       )
     } catch let error as ProviderMessageError {
       return methodErrorResponse(
@@ -242,6 +244,7 @@ final class CoreMessageRouter {
       Data(#"{"method":"getDelayTestConfiguration","arguments":null}"#.utf8),
       route: .networkExtension
     )
+    try requireMethodSuccess(snapshot)
     guard let bytes = snapshot.data(using: .utf8),
       let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
       methodResponseSucceeded(object),
@@ -255,6 +258,7 @@ final class CoreMessageRouter {
     }
     let call = try JSONSerialization.data(withJSONObject: ["method": "prepareDelayTest", "arguments": arguments])
     let response = try await sendCoreMessage(call, route: .app)
+    try requireMethodSuccess(response)
     guard methodResponseHasEmptyStringResult(response),
       revision == configurationRevision,
       currentRoute == .networkExtension
@@ -450,6 +454,21 @@ final class CoreMessageRouter {
     }
   }
 
+  private func requireMethodSuccess(_ response: String) throws {
+    guard let data = response.data(using: .utf8),
+      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
+      throw CoreRoutingError(code: "measurement_core_unavailable", message: "invalid measurement method response", details: ["reason": "invalid_response"])
+    }
+    if let failure = object["error"] as? [String: Any] {
+      throw CoreRoutingError(
+        code: failure["code"] as? String ?? "measurement_core_unavailable",
+        message: failure["message"] as? String ?? "measurement method failed",
+        details: failure["details"]
+      )
+    }
+  }
+
   private func methodResponseHasEmptyStringResult(
     _ response: String
   ) -> Bool {
@@ -499,14 +518,15 @@ final class CoreMessageRouter {
   private func methodErrorResponse(
     data: Data?,
     code: String,
-    message: String
+    message: String,
+    details: Any? = nil
   ) -> String {
     var payload: [String: Any] = [
       "result": NSNull(),
       "error": [
         "code": code,
         "message": message,
-        "details": NSNull(),
+        "details": details ?? NSNull(),
       ],
     ]
     if let id = methodCallID(data) {

@@ -41,5 +41,13 @@ class IOSDelayRoutingTest(unittest.TestCase):
         self.assertIn('AppCoreMethod.initClash.rawValue', app)
         self.assertIn('"cache-path"', app)
 
+    def test_preparation_preserves_structured_method_failure(self):
+        source = (Path(__file__).resolve().parents[2] / 'ios/Runner/Core/CoreMessageRouter.swift').read_text()
+        prepare = source.split('private func loadAppDelayCore', 1)[1].split('private func sendRoutedCoreMessage', 1)[0]
+        self.assertIn('try requireMethodSuccess(snapshot)', prepare)
+        self.assertIn('try requireMethodSuccess(response)', prepare)
+        self.assertIn('details: error.details', source)
+        self.assertIn('details: failure["details"]', source)
+
 if __name__ == '__main__':
     unittest.main()

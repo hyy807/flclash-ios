@@ -11,6 +11,7 @@ import (
 	"github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 	"github.com/metacubex/mihomo/hub"
+	"github.com/metacubex/mihomo/listener"
 )
 
 type delayPreparationParams struct {
@@ -31,31 +32,42 @@ func delayConfigDigest(data []byte) string {
 func prepareDelayTest(params *delayPreparationParams) error {
 	configMu.Lock()
 	defer configMu.Unlock()
-	unavailable := func() error {
-		return &MethodError{Code: "measurement_core_unavailable", Message: "measurement configuration is unavailable or differs from the running core"}
+	unavailable := func(reason string) error {
+		return &MethodError{Code: "measurement_core_unavailable", Message: "measurement preparation failed: " + reason, Details: map[string]any{"reason": reason}}
 	}
-	if !isInit.Load() || params.Digest == "" {
-		return unavailable()
+	if !isInit.Load() {
+		return unavailable("not_initialized")
 	}
-	if preparedDelayDigest == params.Digest && currentConfig != nil {
+	if params == nil || params.Digest == "" {
+		return unavailable("missing_digest")
+	}
+	if isRunning.Load() && appCachePath == "" {
+		return unavailable("active_non_app_core")
+	}
+	if preparedDelayDigest == params.Digest && currentConfig != nil && !isRunning.Load() {
 		patchSelectGroup(params.SelectedMap)
 		setTestURL(params.TestURL)
 		skipCertVerify.Store(params.SkipCertVerify)
 		return nil
 	}
 	data, err := os.ReadFile(filepath.Join(constant.Path.HomeDir(), "config.yaml"))
-	if err != nil || delayConfigDigest(data) != params.Digest {
-		return unavailable()
+	if err != nil {
+		return unavailable("config_read_failed")
+	}
+	if delayConfigDigest(data) != params.Digest {
+		return unavailable("digest_mismatch")
 	}
 	raw, err := unmarshalRawConfig(data)
 	if err != nil {
-		return unavailable()
+		return unavailable("config_decode_failed")
 	}
 	raw.Port, raw.SocksPort, raw.RedirPort, raw.TProxyPort, raw.MixedPort = 0, 0, 0, 0, 0
 	raw.ExternalController, raw.ExternalControllerTLS, raw.ExternalControllerUnix, raw.ExternalControllerPipe = "", "", "", ""
 	raw.ExternalUI, raw.ExternalUIURL, raw.ExternalDohServer = "", "", ""
 	raw.DNS.Listen = ""
 	raw.Tun.Enable, raw.NTP.Enable, raw.GeoAutoUpdate = false, false, false
+	raw.ShadowSocksConfig, raw.VmessConfig = "", ""
+	raw.TuicServer.Enable = false
 	raw.Tunnels = nil
 	for _, mapping := range raw.ProxyProvider {
 		mapping["interval"] = 0
@@ -75,10 +87,12 @@ func prepareDelayTest(params *delayPreparationParams) error {
 	raw.Listeners = nil
 	cfg, err := config.ParseRawConfig(raw)
 	if err != nil {
-		return unavailable()
+		return unavailable("config_parse_failed")
 	}
+	// App bootstrap can own listeners before the extension takes over forwarding.
 	if isRunning.Load() {
-		return &MethodError{Code: "measurement_core_unavailable", Message: "measurement core must not own active listeners"}
+		isRunning.Store(false)
+		listener.StopListener()
 	}
 	preparedDelayDigest = ""
 	providers := make([]*delayInitialProvider, 0, len(cfg.Providers))
@@ -96,7 +110,7 @@ func prepareDelayTest(params *delayPreparationParams) error {
 		}
 	}
 	if failed {
-		return unavailable()
+		return unavailable("provider_initialization_failed")
 	}
 	patchSelectGroup(params.SelectedMap)
 	setTestURL(params.TestURL)
@@ -120,7 +134,7 @@ func delayTestConfiguration() (*delayPreparationParams, error) {
 	configMu.Lock()
 	defer configMu.Unlock()
 	if currentConfig == nil || appliedDelayDigest == "" {
-		return nil, &MethodError{Code: "measurement_core_unavailable", Message: "no applied measurement configuration"}
+		return nil, &MethodError{Code: "measurement_core_unavailable", Message: "no applied measurement configuration", Details: map[string]any{"reason": "no_applied_configuration"}}
 	}
 	picks, _ := readPicks()
 	return &delayPreparationParams{Digest: appliedDelayDigest, SelectedMap: picks, TestURL: currentTestURL(), SkipCertVerify: skipCertVerify.Load()}, nil
