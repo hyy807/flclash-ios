@@ -90,8 +90,12 @@ class _AppStateManagerState extends ConsumerState<AppStateManager>
     if (state == AppLifecycleState.resumed) {
       if (system.isIOS && ref.read(initProvider)) {
         ref.read(proxiesActionProvider.notifier).invalidateForResume();
-        await ref.read(setupActionProvider.notifier).restoreIOSRunningState();
-        await ref.read(proxiesActionProvider.notifier).updateGroups();
+        final restored = await ref
+            .read(setupActionProvider.notifier)
+            .restoreIOSRunningState();
+        if (restored) {
+          await ref.read(proxiesActionProvider.notifier).updateGroups();
+        }
       }
       unawaited(ref.read(locationPermissionsProvider.notifier).refresh());
       WidgetsBinding.instance.addPostFrameCallback((_) {

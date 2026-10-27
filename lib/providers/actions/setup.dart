@@ -144,14 +144,15 @@ class SetupAction extends _$SetupAction {
     _startTime = await service?.getRunTime();
   }
 
-  Future<void> restoreIOSRunningState() async {
-    if (!system.isIOS) return;
+  Future<bool> restoreIOSRunningState() async {
+    if (!system.isIOS) return false;
     final started = await service?.getRunTime();
     _startTime = started;
     _setLocalRunning(started != null);
     ref.read(runningVpnOptionsProvider.notifier).value = started == null
         ? null
         : await ref.read(vpnOptionsProvider.future);
+    return started != null;
   }
 
   Future<void> initStatus() async {
