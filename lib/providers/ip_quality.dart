@@ -8,6 +8,8 @@ import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'core.dart';
+
 part 'generated/ip_quality.g.dart';
 
 Duration? _noRetry(int retryCount, Object error) => null;
@@ -24,7 +26,14 @@ Future<IpQuality> ipQuality(Ref ref, String ip) async {
       request.dio,
       ip,
       cancelToken: cancelToken,
+      fetch: system.isIOS ? ref.read(coreHandlerProvider).probe : null,
     );
+    if (!ref.mounted) {
+      throw DioException.requestCancelled(
+        requestOptions: RequestOptions(path: ''),
+        reason: null,
+      );
+    }
     ref.keepAlive();
     return quality;
   } on IpQualityLookupException catch (error) {
