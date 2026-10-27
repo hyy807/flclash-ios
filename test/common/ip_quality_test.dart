@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -91,7 +92,121 @@ class _Adapter implements HttpClientAdapter {
   );
 }
 
+class _SensitiveSocketException extends SocketException {
+  const _SensitiveSocketException()
+    : super(
+        _DiagnosticAdapter.secret,
+        osError: const OSError(_DiagnosticAdapter.secret, 61),
+      );
+
+  @override
+  String toString() => throw StateError('Exception text must not be read');
+}
+
+class _DiagnosticAdapter implements HttpClientAdapter {
+  static const secret = 'http://proxy-user:proxy-password@proxy.invalid';
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return switch (options.uri.host) {
+      'ident.me' => throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+        message: secret,
+        error: const _SensitiveSocketException(),
+      ),
+      'ip-api.com' => ResponseBody.fromString(secret, 503),
+      'api.ipquery.io' => ResponseBody.fromString(secret, 200),
+      'iplocate.io' => ResponseBody.fromString('[]', 200),
+      'api.ipapi.is' => ResponseBody.fromString('{}', 200),
+      _ => ResponseBody.fromString(secret, 429),
+    };
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 void main() {
+  test('keeps safe per-source diagnostics without proxy credentials', () async {
+    final dio = Dio()..httpClientAdapter = _DiagnosticAdapter();
+    addTearDown(dio.close);
+    try {
+      await lookupIpQuality(dio, _ip, cancelToken: CancelToken());
+      fail('Expected every source to fail');
+    } on IpQualityLookupException catch (error) {
+      expect(error.failures, hasLength(6));
+      final failures = {for (final f in error.failures) f.source: f};
+      final details = error.details;
+      expect(details, hasLength(6));
+      final connection = details[IpQualitySource.identMe]!;
+      expect(
+        failures[IpQualitySource.identMe]!.status,
+        IpQualitySourceStatus.failed,
+      );
+      expect(connection.phase, IpQualityFailurePhase.request);
+      expect(connection.httpStatus, isNull);
+      expect(connection.dioType, DioExceptionType.connectionError);
+      expect(connection.exceptionType, '_SensitiveSocketException');
+      expect(connection.osErrorCode, 61);
+      final response = details[IpQualitySource.ipApiCom]!;
+      expect(
+        failures[IpQualitySource.ipApiCom]!.status,
+        IpQualitySourceStatus.failed,
+      );
+      expect(response.phase, IpQualityFailurePhase.response);
+      expect(response.httpStatus, 503);
+      final decode = details[IpQualitySource.ipQuery]!;
+      expect(
+        failures[IpQualitySource.ipQuery]!.status,
+        IpQualitySourceStatus.failed,
+      );
+      expect(decode.phase, IpQualityFailurePhase.decode);
+      expect(decode.httpStatus, 200);
+      expect(decode.exceptionType, 'FormatException');
+      expect(
+        details[IpQualitySource.ipLocate]!.phase,
+        IpQualityFailurePhase.decode,
+      );
+      final parse = details[IpQualitySource.ipApiIs]!;
+      expect(
+        failures[IpQualitySource.ipApiIs]!.status,
+        IpQualitySourceStatus.noType,
+      );
+      expect(parse.phase, IpQualityFailurePhase.parse);
+      expect(parse.httpStatus, 200);
+      expect(
+        failures[IpQualitySource.proxyCheck]!.status,
+        IpQualitySourceStatus.rateLimited,
+      );
+      for (final detail in details.values) {
+        final summary = detail.summary;
+        expect(summary, contains('phase=${detail.phase.name}'));
+        for (final sensitive in [
+          _DiagnosticAdapter.secret,
+          'proxy-user',
+          'proxy-password',
+          'proxy.invalid',
+          _ip,
+          ..._hosts.values,
+        ]) {
+          expect(summary, isNot(contains(sensitive)));
+        }
+      }
+      expect(connection.summary, contains('osErrorCode=61'));
+      expect(connection.summary, contains('dioType=connectionError'));
+      expect(
+        connection.summary,
+        contains('exceptionType=_SensitiveSocketException'),
+      );
+      expect(response.summary, contains('httpStatus=503'));
+    }
+  });
+
   final samples = <IpQualitySource, (Object, IpQuality)>{
     IpQualitySource.identMe: (
       {

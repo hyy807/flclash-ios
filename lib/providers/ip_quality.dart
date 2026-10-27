@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/common/ip_quality.dart';
+import 'package:fl_clash/common/startup_trace.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -30,11 +31,18 @@ Future<IpQuality> ipQuality(Ref ref, String ip) async {
     if (!ref.mounted) {
       rethrow;
     }
+    final failures = error.failures
+        .map((f) {
+          final detail = error.details[f.source];
+          return '${f.source.label} ${f.status.name}'
+              '${detail == null ? '' : ' (${detail.summary})'}';
+        })
+        .join(', ');
     commonPrint.log(
-      'ip quality lookup failed for $ip: '
-      '${error.failures.map((f) => '${f.source.label} ${f.status.name}').join(', ')}',
+      'ip quality lookup failed: $failures',
       logLevel: LogLevel.warning,
     );
+    StartupTrace.mark('ip quality lookup failed', failures);
     final link = ref.keepAlive();
     final timer = Timer(ref.read(ipQualityFailureCooldownProvider), link.close);
     ref.onDispose(timer.cancel);

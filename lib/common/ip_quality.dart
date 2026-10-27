@@ -11,16 +11,47 @@ typedef IpQualityFailure = ({
   IpQualitySourceStatus status,
 });
 
+enum IpQualityFailurePhase { request, response, decode, parse }
+
+class IpQualityFailureDetail {
+  const IpQualityFailureDetail({
+    required this.phase,
+    this.httpStatus,
+    this.dioType,
+    this.exceptionType,
+    this.osErrorCode,
+  });
+
+  final IpQualityFailurePhase phase;
+  final int? httpStatus;
+  final DioExceptionType? dioType;
+  final String? exceptionType;
+  final int? osErrorCode;
+
+  String get summary => [
+    'phase=${phase.name}',
+    if (httpStatus != null) 'httpStatus=$httpStatus',
+    if (dioType != null) 'dioType=${dioType!.name}',
+    if (exceptionType != null) 'exceptionType=$exceptionType',
+    if (osErrorCode != null) 'osErrorCode=$osErrorCode',
+  ].join(' ');
+}
+
 class IpQualityLookupException implements Exception {
-  const IpQualityLookupException(this.failures);
+  const IpQualityLookupException(
+    this.failures, {
+    this.details = const {},
+  });
 
   final List<IpQualityFailure> failures;
+  final Map<IpQualitySource, IpQualityFailureDetail> details;
 }
 
 class _SourceFailure implements Exception {
-  const _SourceFailure(this.status);
+  const _SourceFailure(this.status, [this.detail]);
 
   final IpQualitySourceStatus status;
+  final IpQualityFailureDetail? detail;
 }
 
 typedef _Answer = ({IpQuality quality, bool inferred});
@@ -55,6 +86,7 @@ class _Lookup {
 
   final _completer = Completer<IpQuality>();
   final _failures = <IpQualityFailure>[];
+  final _details = <IpQualitySource, IpQualityFailureDetail>{};
   IpQuality? _fallback;
   int _wave = 0;
   int _inFlight = 0;
@@ -113,6 +145,9 @@ class _Lookup {
       return;
     }
     _failures.add((source: source, status: _statusOf(error)));
+    _details[source] = error is _SourceFailure && error.detail != null
+        ? error.detail!
+        : const IpQualityFailureDetail(phase: IpQualityFailurePhase.request);
     _advance();
   }
 
@@ -132,7 +167,9 @@ class _Lookup {
       return;
     }
     _failures.sort((a, b) => a.source.index.compareTo(b.source.index));
-    _completer.completeError(IpQualityLookupException(_failures));
+    _completer.completeError(
+      IpQualityLookupException(_failures, details: Map.unmodifiable(_details)),
+    );
   }
 }
 
@@ -143,28 +180,49 @@ Future<_Answer> _query(
   CancelToken cancelToken,
   Duration timeout,
 ) async {
-  final response = await dio
-      .get<String>(
-        _urlOf(source, ip),
-        cancelToken: cancelToken,
-        options: Options(
-          responseType: ResponseType.plain,
-          validateStatus: (_) => true,
-        ),
-      )
-      .timeout(timeout);
-  if (response.statusCode == HttpStatus.tooManyRequests) {
-    throw const _SourceFailure(IpQualitySourceStatus.rateLimited);
+  var phase = IpQualityFailurePhase.request;
+  int? httpStatus;
+  try {
+    final response = await dio
+        .get<String>(
+          _urlOf(source, ip),
+          cancelToken: cancelToken,
+          options: Options(
+            responseType: ResponseType.plain,
+            validateStatus: (_) => true,
+          ),
+        )
+        .timeout(timeout);
+    phase = IpQualityFailurePhase.response;
+    httpStatus = response.statusCode;
+    if (httpStatus == HttpStatus.tooManyRequests) {
+      throw const _SourceFailure(IpQualitySourceStatus.rateLimited);
+    }
+    if (httpStatus != HttpStatus.ok) {
+      throw const _SourceFailure(IpQualitySourceStatus.failed);
+    }
+    phase = IpQualityFailurePhase.decode;
+    final json = jsonDecode(response.data ?? '') as Map<String, dynamic>;
+    phase = IpQualityFailurePhase.parse;
+    final answer = _parse(source, ip, json);
+    if (answer == null) {
+      throw const _SourceFailure(IpQualitySourceStatus.noType);
+    }
+    return answer;
+  } catch (error) {
+    final dioError = error is DioException ? error : null;
+    final cause = dioError?.error ?? error;
+    throw _SourceFailure(
+      _statusOf(error),
+      IpQualityFailureDetail(
+        phase: phase,
+        httpStatus: httpStatus ?? dioError?.response?.statusCode,
+        dioType: dioError?.type,
+        exceptionType: cause is _SourceFailure ? null : '${cause.runtimeType}',
+        osErrorCode: cause is SocketException ? cause.osError?.errorCode : null,
+      ),
+    );
   }
-  if (response.statusCode != HttpStatus.ok) {
-    throw const _SourceFailure(IpQualitySourceStatus.failed);
-  }
-  final json = jsonDecode(response.data ?? '') as Map<String, dynamic>;
-  final answer = _parse(source, ip, json);
-  if (answer == null) {
-    throw const _SourceFailure(IpQualitySourceStatus.noType);
-  }
-  return answer;
 }
 
 IpQualitySourceStatus _statusOf(Object error) {
